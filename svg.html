@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>预览</title>
+  <script src="https://cdn.jsdelivr.net/npm/hanzi-writer@3.5/dist/hanzi-writer.min.js"></script>
+  <link rel="stylesheet" href="./assets/site.css">
+  <link rel="stylesheet" href="./assets/svg.css">
+</head>
+<body>
+<div id="preview-mount"></div>
+
+<script src="./assets/widget-preview.js"></script>
+<script>
+  (function () {
+    const params = new URLSearchParams(window.location.search);
+    const hz = (params.get('hz') || '汉').trim() || '汉';
+    const filename = (window.location.pathname || '').split('/').pop() || '';
+    const mode = filename.includes('export') ? 'export' : 'preview';
+
+    const mountEl = document.getElementById('preview-mount');
+    if (window.HanziWidgets && window.HanziWidgets.preview && window.HanziWidgets.preview.mount) {
+      window.HanziWidgets.preview.mount(mountEl, { hz, mode });
+    }
+  })();
+</script>
+
+
+</body>
+</html>
+
