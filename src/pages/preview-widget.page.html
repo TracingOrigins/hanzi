@@ -1,0 +1,17 @@
+<div id="preview-mount"></div>
+
+<script src="./assets/widget-preview.js"></script>
+<script>
+  (function () {
+    const params = new URLSearchParams(window.location.search);
+    const hz = (params.get('hz') || '汉').trim() || '汉';
+    const filename = (window.location.pathname || '').split('/').pop() || '';
+    const mode = filename.includes('export') ? 'export' : 'preview';
+
+    const mountEl = document.getElementById('preview-mount');
+    if (window.HanziWidgets && window.HanziWidgets.preview && window.HanziWidgets.preview.mount) {
+      window.HanziWidgets.preview.mount(mountEl, { hz, mode });
+    }
+  })();
+</script>
+

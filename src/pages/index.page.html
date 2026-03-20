@@ -1,0 +1,123 @@
+<div class="index-wrap" id="indexRoot">
+  <div class="index-header">
+    <div class="index-title" aria-label="页面标题">汉字笔顺</div>
+    <div class="index-search">
+      <input
+        id="hzInput"
+        type="text"
+        inputmode="text"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="输入汉字（用于演示/练习/预览/导出）"
+        aria-label="搜索框：输入汉字"
+      />
+    </div>
+  </div>
+
+  <div class="index-buttons" role="tablist" aria-label="页面切换">
+    <button class="practice-button" type="button" data-page-key="display" aria-pressed="true">演示</button>
+    <button class="practice-button" type="button" data-page-key="practice" aria-pressed="false">练习</button>
+    <button class="practice-button" type="button" data-page-key="preview" aria-pressed="false">预览</button>
+    <button class="practice-button" type="button" data-page-key="export" aria-pressed="false">导出</button>
+  </div>
+
+  <div class="index-mount" id="mount-area" aria-live="polite"></div>
+</div>
+
+<script src="./assets/widget-display.js"></script>
+<script src="./assets/widget-preview.js"></script>
+
+<script>
+  (function () {
+    const params = new URLSearchParams(window.location.search);
+    const initialHz = (params.get('hz') || '汉').trim() || '汉';
+
+    const hzInputEl = document.getElementById('hzInput');
+    hzInputEl.value = initialHz;
+
+    const mountAreaEl = document.getElementById('mount-area');
+
+    const btnEls = Array.from(document.querySelectorAll('[data-page-key]'));
+    let currentKey = (params.get('tab') || '').trim() || 'display';
+    if (!['display', 'practice', 'preview', 'export'].includes(currentKey)) currentKey = 'display';
+
+    let currentHz = initialHz;
+    let cleanup = null;
+
+    function updateUrl(tab, hz) {
+      try {
+        const url = new URL(window.location.href);
+        if (hz !== undefined) url.searchParams.set('hz', hz);
+        if (tab) url.searchParams.set('tab', tab);
+        history.replaceState({}, '', url.toString());
+      } catch (_) {}
+    }
+
+    function setActiveButton(nextKey) {
+      btnEls.forEach(btn => {
+        const isActive = btn.dataset.pageKey === nextKey;
+        btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      });
+    }
+
+    function mountCurrent(key) {
+      if (!['display', 'practice', 'preview', 'export'].includes(key)) return;
+      currentKey = key;
+      setActiveButton(key);
+
+      if (cleanup) {
+        try { cleanup(); } catch (_) {}
+        cleanup = null;
+      }
+
+      // display / practice
+      if (key === 'display' || key === 'practice') {
+        if (window.HanziWidgets && window.HanziWidgets.display && window.HanziWidgets.display.mount) {
+          cleanup = window.HanziWidgets.display.mount(mountAreaEl, {
+            hz: currentHz,
+            mode: key
+          });
+        }
+        return;
+      }
+
+      // preview / export
+      if (key === 'preview' || key === 'export') {
+        if (window.HanziWidgets && window.HanziWidgets.preview && window.HanziWidgets.preview.mount) {
+          cleanup = window.HanziWidgets.preview.mount(mountAreaEl, {
+            hz: currentHz,
+            mode: key === 'export' ? 'export' : 'preview'
+          });
+        }
+      }
+    }
+
+    function applySearchAndRefresh() {
+      const hz = (hzInputEl.value || '').trim() || '汉';
+      currentHz = hz;
+      updateUrl(currentKey, hz);
+      mountCurrent(currentKey);
+    }
+
+    btnEls.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.pageKey;
+        if (!['display', 'practice', 'preview', 'export'].includes(key)) return;
+        updateUrl(key, currentHz);
+        mountCurrent(key);
+      });
+    });
+
+    hzInputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        applySearchAndRefresh();
+      }
+    });
+    hzInputEl.addEventListener('blur', applySearchAndRefresh);
+
+    updateUrl(currentKey, currentHz);
+    mountCurrent(currentKey);
+  })();
+</script>
+

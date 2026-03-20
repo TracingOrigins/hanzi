@@ -1,0 +1,95 @@
+:root {
+  color-scheme: light dark;
+
+  /* 基础色 */
+  --bg-color: #ffffff;
+  --text-color: #37352f;
+  --border-color: #ededeb;
+
+  /* 控件色 */
+  --button-bg: #ffffff;
+  --button-hover: #f1f1f0;
+  /* 按钮文字：比主文本更浅，提升可读性 */
+  --button-text-color: rgba(55, 53, 47, 0.7);
+  --input-bg: #ffffff;
+  --input-border: #ededeb;
+
+  /* HanziWriter 色 */
+  --writer-stroke: #2383e2;
+  --writer-outline: #f0f0f0;
+  --writer-highlight: #2383e2;
+  --writer-drawing: #333333;
+
+  /* 复合页（multi）会用到 */
+  --panel-bg: rgba(0, 0, 0, 0.02);
+  --danger: #d0302f;
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-color: #191919;
+    --text-color: #ffffff;
+    --border-color: #2f2f2f;
+
+    --button-bg: #2f2f2f;
+    --button-hover: #3f3f3f;
+    /* 深色模式下同样保持“更浅”的按钮文字 */
+    --button-text-color: rgba(255, 255, 255, 0.7);
+    --input-bg: #2a2a2a;
+    --input-border: #3a3a3a;
+
+    --writer-stroke: #2383e2;
+    --writer-outline: #2d2d2d;
+    --writer-highlight: #2383e2;
+    --writer-drawing: #ffffff;
+
+    --panel-bg: rgba(255, 255, 255, 0.03);
+    --danger: #ff6b6b;
+    --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  }
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  transition: background-color 0.3s ease;
+}
+
+button {
+  font-family: inherit;
+}
+
+/* 单字/多字练习页共用的按钮样式 */
+.practice-controls {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  /* 默认“按钮在下方”，与上方 writer 留出空隙 */
+  margin-top: 20px;
+}
+
+.practice-button {
+  padding: 6px;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background-color: var(--button-bg);
+  color: var(--button-text-color);
+  font-size: 14px;
+  font-weight: 500;
+  transition: background-color 0.2s;
+  user-select: none;
+}
+
+.practice-button:hover {
+  background-color: var(--button-hover);
+}
+

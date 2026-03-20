@@ -1,0 +1,92 @@
+/* 首页：标题 + 居中搜索 + 按钮切换 + 挂载展示 */
+
+.index-wrap {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 26px 18px 40px;
+}
+
+.index-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 0 8px;
+}
+
+.index-title {
+  font-weight: 800;
+  font-size: 32px;
+  letter-spacing: 0.3px;
+}
+
+.index-search {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.index-search input[type='text'] {
+  width: min(560px, 92vw);
+  padding: 13px 16px;
+  border: 1px solid var(--input-border);
+  border-radius: 12px;
+  background: var(--input-bg);
+  color: var(--text-color);
+  outline: none;
+  font-size: 15px;
+  font-weight: 500;
+  box-sizing: border-box;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+}
+
+.index-search input[type='text']::placeholder {
+  color: color-mix(in srgb, var(--text-color) 70%, transparent);
+}
+
+.index-search input[type='text']:focus {
+  border-color: var(--writer-stroke);
+  box-shadow: 0 0 0 4px rgba(35, 131, 226, 0.16);
+}
+
+.index-buttons {
+  margin-top: 22px;
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.index-buttons .practice-button[aria-pressed='true'] {
+  background-color: var(--button-hover);
+  color: var(--text-color);
+  border-color: var(--writer-stroke);
+}
+
+.index-mount {
+  width: 100%;
+  border: 1px solid var(--border-color);
+  margin-top: 22px;
+  height: min(50vh, 780px);
+  border-radius: 16px;
+  background: var(--panel-bg);
+  box-shadow: var(--shadow);
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 14px;
+}
+
+.index-mount .multi-wrap {
+  margin-top: 0;
+  margin-bottom: 0;
+  /* 让首页里的演示/练习内容在挂载区域内垂直居中 */
+  height: 100%;
+  justify-content: center;
+}
+
+.index-mount .svg-page {
+  width: 100%;
+  height: 100%;
+}
+

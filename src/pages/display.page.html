@@ -1,0 +1,248 @@
+<div class="multi-wrap" id="root">
+  <div class="multi-grid" id="grid"></div>
+
+  <div class="practice-controls" id="controls" hidden>
+    <button class="practice-button" id="btnPlay" type="button">演示动画</button>
+    <button class="practice-button" id="btnQuiz" type="button">书写练习</button>
+  </div>
+</div>
+
+<script>
+  const gridEl = document.getElementById('grid');
+  const rootEl = document.getElementById('root');
+  const controlsEl = document.getElementById('controls');
+  const btnPlayEl = document.getElementById('btnPlay');
+  const btnQuizEl = document.getElementById('btnQuiz');
+
+  function getCssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function normalizeText(text) {
+    const raw = (text ?? '').toString();
+    return Array.from(raw)
+      .map(c => c.trim())
+      .filter(Boolean);
+  }
+
+  function getInitialText() {
+    const params = new URLSearchParams(window.location.search);
+    const hz = params.get('hz');
+    return hz && hz.trim() ? hz.trim() : '汉';
+  }
+
+  function getIsPracticePage() {
+    const filename = (window.location.pathname || '').split('/').pop() || '';
+    // pages.json 里 practice.html 和 display.html 分别复用本文件，
+    // 运行时根据输出文件名区分模式。
+    return filename.includes('practice');
+  }
+
+  const IS_PRACTICE = getIsPracticePage();
+  rootEl.classList.toggle('is-practice', IS_PRACTICE);
+
+  // 演示页不需要任何按钮：直接从 DOM 移除，避免可见/可交互/被辅助技术识别。
+  if (!IS_PRACTICE) {
+    controlsEl.remove();
+  } else {
+    controlsEl.hidden = false;
+  }
+
+  let writers = [];
+  let sequenceToken = 0;
+
+  function cancelAll() {
+    writers.forEach(w => {
+      try { w.cancelQuiz(); } catch (_) {}
+      try { w.pauseAnimation(); } catch (_) {}
+    });
+  }
+
+  function clearWritingState(exceptWriter) {
+    writers.forEach(w => {
+      if (exceptWriter && w === exceptWriter) return;
+      try { w.hideCharacter(); } catch (_) {}
+    });
+  }
+
+  function clearGrid() {
+    cancelAll();
+    writers = [];
+    gridEl.innerHTML = '';
+  }
+
+  function buildWriter(targetId, ch) {
+    const el = document.getElementById(targetId);
+    // 尺寸由 CSS 统一管理（--writer-cell-size），这里读取 writer-target 的实际宽度，
+    // 确保 HanziWriter 的画布大小与边框/布局完全一致。
+    // 使用 offsetWidth 包含边框，避免单字页/多字页因为 clientWidth(不含边框) 导致字形缩放不一致。
+    const size = Math.round(el.offsetWidth);
+
+    return HanziWriter.create(targetId, ch, {
+      width: size,
+      height: size,
+      padding: Math.round(size * 0.14),
+      // 多字页面会一次性创建多个 writer；如果 showCharacter 默认为 true，
+      // 那些还没轮到动画/练习的字会先直接显示为“已写完”的样式。
+      // 这里先隐藏字符主体，只保留轮廓，确保“第2/3个字”不会提前上色。
+      showCharacter: false,
+      showOutline: true,
+      strokeColor: getCssVar('--writer-stroke'),
+      outlineColor: getCssVar('--writer-outline'),
+      highlightColor: getCssVar('--writer-highlight'),
+      drawingColor: getCssVar('--writer-drawing'),
+      charDataLoader: (char, onComplete) => {
+        fetch(`https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0/${char}.json`)
+          .then(res => {
+            if (!res.ok) throw new Error(`load failed: ${res.status}`);
+            return res.json();
+          })
+          .then(onComplete);
+      }
+    });
+  }
+
+  function createWriterTarget(ch, index) {
+    const target = document.createElement('div');
+    target.className = 'writer-target';
+    const targetId = `target-${index}-${Math.random().toString(16).slice(2)}`;
+    target.id = targetId;
+    gridEl.appendChild(target);
+
+    const writer = buildWriter(targetId, ch);
+    writers.push(writer);
+
+    // 展示页只演示，不显示按钮；允许点击某个字重新播放该字动画。
+    if (!IS_PRACTICE) {
+      target.addEventListener('click', () => {
+        // 强制“一次只有一个字在写”：
+        // 点击时中断当前顺序播放/其它动画，只播放被点击的这个字。
+        ++sequenceToken;
+        cancelAll();
+        // 清空其它字的“已写状态”，只保留轮廓，避免同时出现多个“已写完”的字。
+        writers.forEach(w => {
+          if (w === writer) return;
+          try { w.hideCharacter(); } catch (_) {}
+        });
+        try { writer.cancelQuiz(); } catch (_) {}
+        // 当前字也从“空白轮廓”开始重播
+        try { writer.hideCharacter(); } catch (_) {}
+        try { writer.animateCharacter(); } catch (_) {}
+      });
+    }
+  }
+
+  function renderText(text) {
+    clearGrid();
+    const chars = normalizeText(text);
+    if (chars.length === 0) {
+      gridEl.innerHTML = '<div class="err">请输入至少 1 个字符（建议汉字）。</div>';
+      return;
+    }
+
+    // 与 preview 的布局策略保持一致：最多 7 列，列数只由字符数量决定。
+    const cols = Math.min(7, chars.length);
+    rootEl.style.setProperty('--multi-cols', String(cols));
+    chars.forEach((ch, idx) => createWriterTarget(ch, idx));
+  }
+
+  async function playAllSequential() {
+    const token = ++sequenceToken;
+    cancelAll();
+    clearWritingState();
+    for (const w of writers) {
+      if (token !== sequenceToken) return;
+      w.cancelQuiz();
+      try { w.hideCharacter(); } catch (_) {}
+      await new Promise(resolve => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          resolve();
+        };
+
+        // 如果过程中触发了新的 sequence（例如用户点击按钮），需要及时结束等待。
+        const timer = setInterval(() => {
+          if (token !== sequenceToken) {
+            clearInterval(timer);
+            finish();
+          }
+        }, 50);
+
+        try {
+          w.animateCharacter({ onComplete: () => { clearInterval(timer); finish(); } });
+        } catch (_) {
+          clearInterval(timer);
+          finish();
+        }
+      });
+
+      if (token !== sequenceToken) return;
+      await new Promise(r => setTimeout(r, 250));
+    }
+  }
+
+  async function quizAllSequential() {
+    const token = ++sequenceToken;
+    cancelAll();
+    clearWritingState();
+
+    for (const w of writers) {
+      if (token !== sequenceToken) return;
+      try { w.hideCharacter(); } catch (_) {}
+      await new Promise(resolve => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          resolve();
+        };
+
+        // 如果过程中触发了新的 sequence，需要及时结束等待。
+        const timer = setInterval(() => {
+          if (token !== sequenceToken) {
+            clearInterval(timer);
+            finish();
+          }
+        }, 50);
+
+        try {
+          // quiz 支持 onComplete：每个字完成后触发下一个字的 quiz。
+          w.quiz({
+            onComplete: () => {
+              clearInterval(timer);
+              finish();
+            }
+          });
+        } catch (_) {
+          clearInterval(timer);
+          finish();
+        }
+      });
+      // 给用户一个极短的间隔（避免 onComplete 同一帧里立刻切换）。
+      await new Promise(r => setTimeout(r, 80));
+    }
+  }
+
+  const initText = getInitialText();
+  renderText(initText);
+
+  (async () => {
+    await playAllSequential();
+  })();
+
+  if (IS_PRACTICE) {
+    btnPlayEl.addEventListener('click', () => playAllSequential());
+    btnQuizEl.addEventListener('click', () => quizAllSequential());
+  }
+
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    const nextText = getInitialText();
+    renderText(nextText);
+    (async () => {
+      await playAllSequential();
+    })();
+  });
+</script>
+

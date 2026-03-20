@@ -1,0 +1,195 @@
+body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* 多字页面内容可能很长：从顶部开始渲染，避免把最上方行“居中挤出”视口。 */
+  justify-content: flex-start;
+  /* 只禁止横向滚动，允许多行换行后在纵向正常显示 */
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+.multi-wrap {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  /* 当内容高度 <= 视口高度时整体上下居中；当内容高度超出时，auto 外边距会退化为 0，从顶部开始可滚动。 */
+  margin-top: auto;
+  margin-bottom: auto;
+  /* 统一管理每个字块的尺寸/边框样式（display 与 practice 只改变量值）。 */
+  --writer-cell-size: 160px;
+  /* 多字网格里每个字块之间的间距（同时会影响容器宽度计算） */
+  --writer-cell-gap: 8px;
+  --writer-cell-border-radius: 8px;
+  /* 所有汉字统一边框样式，不区分展示/练习。 */
+  --writer-cell-border-color: var(--border-color);
+  --writer-cell-cursor: pointer;
+  --multi-cols: 1;
+}
+
+.multi-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--multi-cols, 1), var(--writer-cell-size));
+  grid-auto-rows: var(--writer-cell-size);
+  gap: var(--writer-cell-gap);
+  padding: 0;
+  /* 容器宽度与 multi-svg（同样的间距逻辑）保持一致：cols * size + (cols - 1) * gap */
+  width: calc(
+    var(--multi-cols, 1) * var(--writer-cell-size) +
+      (var(--multi-cols, 1) - 1) * var(--writer-cell-gap)
+  );
+  height: auto;
+}
+
+.writer-target {
+  background: var(--bg-color);
+  width: var(--writer-cell-size);
+  height: var(--writer-cell-size);
+  box-sizing: border-box; /* 让边框不额外撑大外宽：外宽始终是 160px */
+  border-radius: var(--writer-cell-border-radius);
+  border: 1px solid var(--writer-cell-border-color);
+  cursor: var(--writer-cell-cursor);
+  /* 关键：防止 flex 在窄屏/窄容器时把字块缩小，
+     从而避免你感知到的“文字大小自适应”。 */
+  flex: 0 0 auto;
+}
+
+.multi-wrap.is-practice {
+  --writer-cell-cursor: default;
+}
+
+/* 多字练习页共用按钮样式容器：放在 writer 下方 */
+.practice-controls {
+  margin-top: 20px;
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.err {
+  padding: 10px;
+  font-size: 13px;
+  color: var(--danger);
+  line-height: 1.4;
+}
+
+/* 以下旧样式在新 multi 页面结构中不再使用，但保留以避免影响其它页面。 */
+.wrap {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 18px 16px 32px;
+}
+
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.title {
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  margin-right: auto;
+  white-space: nowrap;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+label {
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+input[type="text"] {
+  width: min(360px, 70vw);
+  padding: 8px 10px;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--text-color);
+  outline: none;
+  font-size: 14px;
+}
+
+input[type="range"] {
+  width: 150px;
+}
+
+/* 按钮样式由 `site.css` 的 `.practice-button` 统一管理 */
+
+.hint {
+  margin: 12px 2px 0;
+  font-size: 13px;
+  opacity: 0.75;
+  line-height: 1.4;
+}
+
+.grid {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.tile {
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--panel-bg);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 210px;
+}
+
+.tileHead {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 10px 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.char {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+.miniBtn {
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 8px;
+}
+
+.stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  flex: 1;
+}
+
+.target {
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-color);
+}
+

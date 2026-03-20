@@ -1,0 +1,17 @@
+<div id="display-mount"></div>
+
+<script src="./assets/widget-display.js"></script>
+<script>
+  (function () {
+    const params = new URLSearchParams(window.location.search);
+    const hz = (params.get('hz') || '汉').trim() || '汉';
+    const filename = (window.location.pathname || '').split('/').pop() || '';
+    const mode = filename.includes('practice') ? 'practice' : 'display';
+
+    const mountEl = document.getElementById('display-mount');
+    if (window.HanziWidgets && window.HanziWidgets.display && window.HanziWidgets.display.mount) {
+      window.HanziWidgets.display.mount(mountEl, { hz, mode });
+    }
+  })();
+</script>
+

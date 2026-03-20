@@ -1,0 +1,105 @@
+/* Unified styles for both inline-svg and export-svg pages */
+
+/* 约束在 `.svg-page` 下，避免影响首页布局 */
+.svg-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  width: 100%;
+}
+
+/* export: 需要提示文字，所以纵向布局 */
+.svg-page.is-export {
+  flex-direction: column;
+}
+
+.svg-page #svg-container {
+  width: 160px;
+  height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box; /* 边框不改变外部 160x160 尺寸 */
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  position: relative;
+}
+
+/* inline 模式：DOM 直接插入 svg */
+.svg-page svg {
+  width: 100%;
+  height: 100%;
+  fill: var(--writer-stroke);
+}
+
+/* export 模式：用 img 承载 svg blob */
+.svg-page img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+  position: relative;
+  z-index: 1;
+}
+
+/* export 模式：预览叠加“每格边框”，但不写入导出的 SVG 本体 */
+.svg-page.is-export .preview-grid-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none; /* 右键保存应命中 img */
+  display: grid;
+  grid-template-columns: repeat(var(--preview-cols, 1), var(--preview-cell, 160px));
+  grid-template-rows: repeat(var(--preview-rows, 1), var(--preview-cell, 160px));
+  gap: var(--preview-gap, 8px);
+  z-index: 2;
+}
+
+.svg-page.is-export .preview-grid-overlay > div {
+  box-sizing: border-box;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.svg-page .export-controls {
+  margin-top: 20px;
+  font-size: 14px;
+  color: var(--writer-stroke);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.svg-page .export-options {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px; /* 尺寸组 <-> 颜色组之间间距 */
+  flex-wrap: wrap;
+}
+
+.svg-page .export-group {
+  display: flex;
+  align-items: center;
+  gap: 0; /* 组内：文字 <-> 下拉框间距 */
+}
+
+.svg-page .export-group > span {
+  /* 防止默认行高/vertical-align 导致“文字”和“下拉框”上下不对齐 */
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.2;
+}
+
+.svg-page .export-group > select {
+  align-self: center;
+  line-height: 1.2;
+}
+
+/* inline 模式不显示提示文字 */
+.svg-page:not(.is-export) .export-controls {
+  display: none;
+}
+
