@@ -1,6 +1,18 @@
 /* Unified styles for both inline-svg and export-svg pages */
 
 /* 约束在 `.svg-page` 下，避免影响首页布局 */
+.svg-page,
+#preview-mount {
+  /* 给预览/导出页的挂载区域与页面容器提供“高度基准”，
+     这样才能在视口内实现真正的上下居中。 */
+  height: 100%;
+}
+
+#preview-mount {
+  width: 100%;
+  display: flex;
+}
+
 .svg-page {
   display: flex;
   align-items: center;
