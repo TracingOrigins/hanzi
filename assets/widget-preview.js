@@ -27,8 +27,24 @@
   const padViewBox = (DOM_PADDING_PX / DOM_SIZE_PX) * CELL_VIEWBOX;
   const domScale = (DOM_SIZE_PX - 2 * DOM_PADDING_PX) / DOM_SIZE_PX;
 
+  // 缓存字符笔画数据，避免生成“逐笔多帧”时重复拉取同一个字的数据。
+  const charDataCache = new Map();
+  async function loadCharacterDataCached(ch) {
+    if (!ch) throw new Error('loadCharacterDataCached: char is required');
+    if (charDataCache.has(ch)) return charDataCache.get(ch);
+    const p = HanziWriter.loadCharacterData(ch);
+    charDataCache.set(ch, p);
+    try {
+      await p;
+    } catch (e) {
+      charDataCache.delete(ch);
+      throw e;
+    }
+    return p;
+  }
+
   async function generateCombinedSvg(chars, opts = {}) {
-    const { includeCellBorders = false, strokeColorOverride = null, sizeScale = 1 } = opts;
+    const { includeCellBorders = false, strokeColorOverride = null, sizeScale = 1, strokesLimit = null } = opts;
     const cols = Math.min(DEFAULT_COLS, chars.length);
     const rows = Math.ceil(chars.length / cols);
 
@@ -60,16 +76,17 @@
       const cellX = col * (CELL_VIEWBOX + gapViewBoxX);
       const cellY = row * (CELL_VIEWBOX + gapViewBoxY);
 
-      const data = await HanziWriter.loadCharacterData(ch);
+      const data = await loadCharacterDataCached(ch);
 
       if (includeCellBorders) {
         svgString += `<rect x="${cellX}" y="${cellY}" width="${CELL_VIEWBOX}" height="${CELL_VIEWBOX}" fill="none" stroke="${borderColor}" stroke-width="${borderStrokeWidthPx}" vector-effect="non-scaling-stroke" rx="${rx}" ry="${ry}" />`;
       }
 
       svgString += `<g transform="translate(${cellX}, ${cellY}) translate(${padViewBox}, ${padViewBox}) scale(${domScale}, -${domScale}) translate(0, -900)">`;
-      data.strokes.forEach((path) => {
-        svgString += `<path d="${path}" fill="${strokeColor}" />`;
-      });
+      const effectiveLimit = strokesLimit == null ? data.strokes.length : Math.min(data.strokes.length, strokesLimit);
+      for (let s = 0; s < effectiveLimit; s++) {
+        svgString += `<path d="${data.strokes[s]}" fill="${strokeColor}" />`;
+      }
       svgString += `</g>`;
     }
 
@@ -167,16 +184,38 @@
     colorGroupEl.appendChild(colorSelectEl);
     optionsRowEl.appendChild(colorGroupEl);
 
-    // 下载按钮放在尺寸和颜色选择之后
+    // 操作按钮：导出为图片 + 导出逐笔图片/GIF（仅单字显示）
+    const exportActionsEl = document.createElement('div');
+    exportActionsEl.className = 'export-actions';
+
     const btnDownloadEl = document.createElement('button');
     btnDownloadEl.className = 'practice-button';
     btnDownloadEl.id = 'btnDownload';
     btnDownloadEl.type = 'button';
     btnDownloadEl.textContent = '导出为图片';
-    infoEl.appendChild(btnDownloadEl);
+
+    const btnDownloadStepsEl = document.createElement('button');
+    btnDownloadStepsEl.className = 'practice-button';
+    btnDownloadStepsEl.id = 'btnDownloadSteps';
+    btnDownloadStepsEl.type = 'button';
+    btnDownloadStepsEl.textContent = '导出逐笔图片';
+    btnDownloadStepsEl.hidden = true; // renderAll 后根据字符数量决定是否显示
+
+    const btnDownloadGifEl = document.createElement('button');
+    btnDownloadGifEl.className = 'practice-button';
+    btnDownloadGifEl.id = 'btnDownloadGif';
+    btnDownloadGifEl.type = 'button';
+    btnDownloadGifEl.textContent = '导出逐笔GIF';
+    btnDownloadGifEl.hidden = true; // renderAll 后根据字符数量决定是否显示
+
+    exportActionsEl.appendChild(btnDownloadEl);
+    exportActionsEl.appendChild(btnDownloadStepsEl);
+    exportActionsEl.appendChild(btnDownloadGifEl);
+    infoEl.appendChild(exportActionsEl);
 
     let currentObjectUrl = null;
     let currentSvgString = '';
+    let currentSingleChar = null;
 
     function getSizeScale() {
       if (mode !== 'export' || !sizeSelectEl || !sizeSelectEl.value) return 1;
@@ -212,6 +251,533 @@
       setTimeout(() => URL.revokeObjectURL(url), 5000);
     }
 
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }
+
+    /**
+     * HanziWriter 动画笔画用「粗线 + clip-path」实现：clip-path 形如 url("http://当前页#mask-xxx")。
+     * 序列化成 Blob 再作为 <img> 绘制到 canvas 时，这种绝对地址无法解析，裁剪失效，就会只剩圆头粗线（与演示不一致）。
+     * 改为 url(#mask-xxx) 后，引用落在同一份 SVG 内，栅格化才能与页面一致。
+     */
+    function normalizeSvgClipUrlsForBlobRasterize(svgText) {
+      if (!svgText) return svgText;
+      // 先做一次宽松字符串归一，覆盖最常见形式
+      const coarse = svgText
+        .replace(/url\(\s*"[^#"]*#([^"#)]+)"\s*\)/gi, 'url(#$1)')
+        .replace(/url\(\s*'[^#']*#([^'#)]+)'\s*\)/gi, 'url(#$1)')
+        .replace(/url\(\s*&quot;[^#&]*#([^&]+)&quot;\s*\)/gi, 'url(#$1)')
+        .replace(/url\(\s*&apos;[^#&]*#([^&]+)&apos;\s*\)/gi, 'url(#$1)')
+        .replace(/url\(\s*[^#\s)]+#([^)\s]+)\s*\)/gi, 'url(#$1)');
+
+      // 再做 DOM 级修复：比纯正则更稳，避免漏掉 style/属性里的变体写法
+      try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(coarse, 'image/svg+xml');
+        const idFromUrl = (raw) => {
+          if (!raw) return null;
+          const m = raw.match(/#([^)\"']+)/);
+          return m ? m[1] : null;
+        };
+
+        const nodes = doc.querySelectorAll('*');
+        nodes.forEach((el) => {
+          const clipPath = el.getAttribute('clip-path');
+          if (clipPath) {
+            const id = idFromUrl(clipPath);
+            if (id) el.setAttribute('clip-path', `url(#${id})`);
+          }
+
+          const style = el.getAttribute('style');
+          if (style && /clip-path\s*:/i.test(style)) {
+            const nextStyle = style.replace(
+              /clip-path\s*:\s*url\(([^)]+)\)/gi,
+              (_all, urlPart) => {
+                const id = idFromUrl(urlPart);
+                return id ? `clip-path:url(#${id})` : _all;
+              }
+            );
+            el.setAttribute('style', nextStyle);
+          }
+        });
+
+        return new XMLSerializer().serializeToString(doc.documentElement);
+      } catch (_) {
+        return coarse;
+      }
+    }
+
+    async function renderSvgToCanvas(svgString, width, height) {
+      const safeSvg = normalizeSvgClipUrlsForBlobRasterize(svgString);
+      const svgBlob = new Blob([safeSvg], { type: 'image/svg+xml;charset=utf-8' });
+      const svgUrl = URL.createObjectURL(svgBlob);
+
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = svgUrl;
+
+      await new Promise((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = (e) => reject(e);
+      });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(width));
+      canvas.height = Math.max(1, Math.round(height));
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      URL.revokeObjectURL(svgUrl);
+      return canvas;
+    }
+
+    async function canvasToPngBlob(canvas) {
+      return await new Promise((resolve) => {
+        canvas.toBlob((b) => resolve(b), 'image/png');
+      });
+    }
+
+    function sleep(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    let gifJsLoadingPromise = null;
+    /** 与当前页面同源，避免 Worker 无法加载跨域 worker 脚本（如 localhost vs cdn） */
+    function resolveGifAssetUrl(filename) {
+      return new URL(`./assets/${filename}`, window.location.href).href;
+    }
+
+    async function ensureGifJsOptimizedLoaded() {
+      const workerUrl = resolveGifAssetUrl('gif.worker.js');
+      const gifJsUrl = resolveGifAssetUrl('gif.js');
+      if (window.GIF) return workerUrl;
+      if (gifJsLoadingPromise) return gifJsLoadingPromise;
+
+      gifJsLoadingPromise = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = gifJsUrl;
+        s.async = true;
+        s.onload = () => resolve(workerUrl);
+        s.onerror = () => reject(new Error(`Failed to load ${gifJsUrl}`));
+        document.head.appendChild(s);
+      });
+
+      return await gifJsLoadingPromise;
+    }
+
+    async function downloadCurrentStepsPngs() {
+      try {
+        if (!currentSingleChar) return;
+        if (mode !== 'export') return;
+
+        const chars = [currentSingleChar];
+        const strokeColor = getStrokeColorForExport();
+        const sizeScale = getSizeScale();
+
+        const data = await loadCharacterDataCached(currentSingleChar);
+        const total = data.strokes.length;
+        if (!total) return;
+
+        const pixelSize = CELL_IMG_W * sizeScale;
+        const filenamePrefix = currentSingleChar;
+
+        // 把逐笔过程拼成“一张图”导出，避免下载 N 张 PNG
+        const gap = Math.max(0, Math.round(pixelSize * 0.04));
+        const stepsCols = Math.min(total, 7);
+        const stepsRows = Math.ceil(total / stepsCols);
+
+        const outCanvas = document.createElement('canvas');
+        outCanvas.width = stepsCols * pixelSize + (stepsCols - 1) * gap;
+        outCanvas.height = stepsRows * pixelSize + (stepsRows - 1) * gap;
+        const outCtx = outCanvas.getContext('2d');
+        if (!outCtx) throw new Error('PNG export failed: no canvas context');
+
+        // 逐笔叠加：第 1 笔、第 2 笔...直到全部笔画
+        for (let step = 1; step <= total; step++) {
+          const svgString = await generateCombinedSvg(chars, {
+            includeCellBorders: false,
+            strokeColorOverride: strokeColor,
+            sizeScale,
+            strokesLimit: step
+          });
+
+          const stepCanvas = await renderSvgToCanvas(svgString, pixelSize, pixelSize);
+
+          const idx = step - 1;
+          const x = (idx % stepsCols) * (pixelSize + gap);
+          const y = Math.floor(idx / stepsCols) * (pixelSize + gap);
+          outCtx.drawImage(stepCanvas, x, y);
+        }
+
+        const pngBlob = await canvasToPngBlob(outCanvas);
+        if (!pngBlob) throw new Error('PNG export failed: empty blob');
+
+        const filename = `${filenamePrefix}-steps.png`;
+        downloadBlob(pngBlob, filename);
+      } catch (e) {
+        console.error(e);
+        window.alert('导出逐笔图片失败：' + (e && e.message ? e.message : String(e)));
+      }
+    }
+
+    async function downloadCurrentStepsGif() {
+      const prevBtnText = btnDownloadGifEl ? btnDownloadGifEl.textContent : '导出逐笔GIF';
+      try {
+        if (!currentSingleChar) return;
+        if (mode !== 'export') return;
+
+        if (btnDownloadGifEl) {
+          btnDownloadGifEl.disabled = true;
+          btnDownloadGifEl.textContent = '正在生成...';
+        }
+
+        const sizeScale = getSizeScale();
+        const pixelSize = CELL_IMG_W * sizeScale;
+        const filename = `${currentSingleChar}.gif`;
+        const workerUrl = await ensureGifJsOptimizedLoaded();
+        const bgColor = getCssVar('--bg-color') || '#ffffff';
+
+        const gif = new window.GIF({
+          workers: 2,
+          quality: 10,
+          workerScript: workerUrl,
+          repeat: 0,
+          // 不要把画面中的透明像素编码成 GIF 透明背景
+          transparent: null,
+          // gif.js 在 render 时要求全局 width/height 存在
+          width: Math.round(pixelSize),
+          height: Math.round(pixelSize)
+        });
+
+        const frameDelayMs = 80;
+        const finalDelayMs = 500;
+
+        const selectedStrokeColor = getStrokeColorForExport();
+        const useSelectedColor = !!(colorSelectEl && colorSelectEl.value && colorSelectEl.value !== 'default');
+
+        // strokeColor 只用于基础描边/未书写状态，保持主题默认，避免用户选色后“未书写部分”也变色
+        const strokeColor = useSelectedColor ? selectedStrokeColor : getCssVar('--writer-stroke');
+        // outline/highlight 使用默认主题颜色，避免用户选色后“轮廓”直接变成最终填充效果
+        const outlineColor = getCssVar('--writer-outline');
+        // 正在书写的“高亮/当前笔画”需要跟随用户选择
+        const highlightColor = useSelectedColor ? selectedStrokeColor : getCssVar('--writer-highlight');
+        // 仅“书写笔画”使用用户选的颜色（非 default 时）
+        const drawingColor = useSelectedColor ? selectedStrokeColor : getCssVar('--writer-drawing');
+
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.left = '-99999px';
+        iframe.style.top = '-99999px';
+        iframe.style.width = '1px';
+        iframe.style.height = '1px';
+        iframe.style.border = '0';
+
+        // 注意：使用 srcdoc + 同域渲染，避免 clip-path 在父文档 Blob/rasterize 场景失效
+        iframe.srcdoc = `
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      html, body { margin: 0; padding: 0; background: transparent; }
+      #target { width: ${pixelSize}px; height: ${pixelSize}px; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/hanzi-writer@3.5/dist/hanzi-writer.min.js"></script>
+  </head>
+  <body>
+    <div id="target"></div>
+    <script>
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+      function normalizeSvgClipUrls(svgText) {
+        if (!svgText) return svgText;
+        const coarse = svgText
+          .replace(/url\\(\\s*\"[^#\"]*#([^\"#)]+)\"\\s*\\)/gi, 'url(#$1)')
+          .replace(/url\\(\\s*'[^#']*#([^'#)]+)'\\s*\\)/gi, 'url(#$1)')
+          .replace(/url\\(\\s*&quot;[^#&]*#([^&]+)&quot;\\s*\\)/gi, 'url(#$1)')
+          .replace(/url\\(\\s*&apos;[^#&]*#([^&]+)&apos;\\s*\\)/gi, 'url(#$1)')
+          .replace(/url\\(\\s*[^#\\s)]+#([^\\)\\s]+)\\s*\\)/gi, 'url(#$1)');
+
+        try {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(coarse, 'image/svg+xml');
+          const idFromUrl = (raw) => {
+            if (!raw) return null;
+            const m = raw.match(/#([^)\"']+)/);
+            return m ? m[1] : null;
+          };
+
+          const nodes = doc.querySelectorAll('*');
+          nodes.forEach((el) => {
+            const clipPath = el.getAttribute('clip-path');
+            if (clipPath) {
+              const id = idFromUrl(clipPath);
+              if (id) el.setAttribute('clip-path', 'url(#' + id + ')');
+            }
+
+            const style = el.getAttribute('style');
+            if (style && /clip-path\\s*:/i.test(style)) {
+              const nextStyle = style.replace(
+                /clip-path\\s*:\\s*url\\(([^)]+)\\)/gi,
+                (_all, urlPart) => {
+                  const id = idFromUrl(urlPart);
+                  return id ? ('clip-path:url(#' + id + ')') : _all;
+                }
+              );
+              el.setAttribute('style', nextStyle);
+            }
+          });
+
+          return new XMLSerializer().serializeToString(doc.documentElement);
+        } catch (_) {
+          return coarse;
+        }
+      }
+
+      async function renderSvgToCanvasInIframe(svgString, width, height) {
+        const safeSvg = normalizeSvgClipUrls(svgString);
+        const svgBlob = new Blob([safeSvg], { type: 'image/svg+xml;charset=utf-8' });
+        const svgUrl = URL.createObjectURL(svgBlob);
+        const img = new Image();
+        img.decoding = 'async';
+        img.src = svgUrl;
+        await new Promise((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = (e) => reject(e);
+        });
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(width));
+        canvas.height = Math.max(1, Math.round(height));
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(svgUrl);
+        return canvas;
+      }
+
+      function canvasToPngBlob(canvas) {
+        return new Promise((resolve) => {
+          canvas.toBlob((b) => {
+            if (b) return resolve(b);
+            // 某些情况下 toBlob 返回 null：兜底走 dataURL 再转成 blob
+            const dataUrl = canvas.toDataURL('image/png');
+            fetch(dataUrl).then(r => r.blob()).then(resolve);
+          }, 'image/png');
+        });
+      }
+
+      window.addEventListener('message', async (ev) => {
+        const msg = ev.data || {};
+        if (msg.type !== 'start') return;
+
+        const { hz, pixelSize, strokeColor, outlineColor, highlightColor, drawingColor, frameDelayMs, finalDelayMs } = msg;
+        const targetEl = document.getElementById('target');
+
+        targetEl.innerHTML = '';
+        const writer = HanziWriter.create('target', hz, {
+          width: pixelSize,
+          height: pixelSize,
+          padding: Math.round(pixelSize * 0.14),
+          showCharacter: false,
+          // 展示“未书写部分”的默认轮廓颜色；用户选色只影响真正书写的笔画
+          showOutline: true,
+          strokeColor,
+          outlineColor,
+          highlightColor,
+          drawingColor,
+          charDataLoader: (char, onComplete) => {
+            fetch('https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0/' + char + '.json')
+              .then(res => { if (!res.ok) throw new Error('load failed'); return res.json(); })
+              .then(onComplete);
+          }
+        });
+
+        const captureFrame = async (index, isFinal) => {
+          const svgEl = targetEl.querySelector('svg');
+          let canvas = null;
+          if (!svgEl) {
+            // 避免缺帧导致父页面按序 flush 永远等不到后续帧
+            canvas = document.createElement('canvas');
+            canvas.width = pixelSize;
+            canvas.height = pixelSize;
+          } else {
+            const svgText = new XMLSerializer().serializeToString(svgEl);
+            canvas = await renderSvgToCanvasInIframe(svgText, pixelSize, pixelSize);
+          }
+          const pngBlob = await canvasToPngBlob(canvas);
+          if (!pngBlob) return;
+          parent.postMessage({ type: 'frame', index, isFinal, pngBlob }, '*');
+        };
+
+        // 动画启动后再采样（等待 svg 渲染出第一帧，避免首帧 svg 为空导致缺帧）
+        await sleep(80);
+        let idx = 0;
+
+        const interval = setInterval(() => {
+          captureFrame(idx++, false);
+        }, frameDelayMs);
+
+        writer.animateCharacter({
+          onComplete: async () => {
+            clearInterval(interval);
+            await sleep(finalDelayMs > 0 ? 20 : 0);
+            await captureFrame(idx, true);
+            parent.postMessage({ type: 'done', lastIndex: idx }, '*');
+          }
+        });
+      });
+    </script>
+  </body>
+</html>
+        `.trim();
+
+        document.body.appendChild(iframe);
+
+        // 等 iframe DOM & 事件监听器 ready，再发送 start，避免 message 丢失
+        await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error('iframe load timeout')), 10000);
+          iframe.onload = () => {
+            clearTimeout(timeout);
+            resolve();
+          };
+          // srcdoc 有时 onload 可能不触发：兜底等待一小段时间再 resolve
+          setTimeout(() => {
+            clearTimeout(timeout);
+            resolve();
+          }, 300);
+        });
+
+        const pending = new Map();
+        let expectedIndex = 0;
+        let addChain = Promise.resolve();
+        let doneReceived = false;
+        let lastIndexReceived = null;
+        let framesReceivedCount = 0;
+        let framesAddedCount = 0;
+
+        function tryFlush() {
+          while (pending.has(expectedIndex)) {
+            const frame = pending.get(expectedIndex);
+            pending.delete(expectedIndex);
+            const { pngBlob, isFinal } = frame;
+
+            addChain = addChain.then(async () => {
+              const url = URL.createObjectURL(pngBlob);
+              const img = new Image();
+              const w = pixelSize;
+              const h = pixelSize;
+              await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = reject;
+                img.src = url;
+              });
+              const canvas = document.createElement('canvas');
+              canvas.width = Math.round(w);
+              canvas.height = Math.round(h);
+              const ctx = canvas.getContext('2d');
+              // 先铺底色，确保导出 GIF 背景为不透明
+              ctx.fillStyle = bgColor;
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              URL.revokeObjectURL(url);
+
+              framesAddedCount++;
+              gif.addFrame(canvas, { delay: isFinal ? finalDelayMs : frameDelayMs, copy: true });
+            });
+
+            expectedIndex++;
+          }
+        }
+
+        const onMessage = (ev) => {
+          const msg = ev.data || {};
+          if (msg.type === 'frame') {
+            framesReceivedCount++;
+            pending.set(msg.index, { pngBlob: msg.pngBlob, isFinal: msg.isFinal });
+            tryFlush();
+          }
+          if (msg.type === 'done') {
+            doneReceived = true;
+            lastIndexReceived = typeof msg.lastIndex === 'number' ? msg.lastIndex : null;
+            // done 后等待 addChain 里最后的帧 flush 完成
+            // gif.render 我们放到外面等待 done+addChain
+          }
+        };
+
+        window.addEventListener('message', onMessage);
+
+        // 等待 iframe 结束后编码
+        // done 后等待一小段时间，确保最后一帧也入队/编码完毕（避免由于丢帧导致永远等待）
+        const donePromise = new Promise((resolve) => {
+          const startedAt = Date.now();
+          const check = setInterval(() => {
+            if (doneReceived && Date.now() - startedAt > 800) {
+              clearInterval(check);
+              resolve();
+            }
+            if (Date.now() - startedAt > 30000) {
+              clearInterval(check);
+              resolve();
+            }
+          }, 50);
+        });
+
+        iframe.contentWindow.postMessage(
+          {
+            type: 'start',
+            hz: currentSingleChar,
+            pixelSize,
+            strokeColor,
+            outlineColor,
+            highlightColor,
+            drawingColor,
+            frameDelayMs,
+            finalDelayMs
+          },
+          '*'
+        );
+
+        await donePromise;
+        // 等待所有帧加入 gif 完成
+        await addChain;
+
+        if (framesAddedCount === 0) {
+          throw new Error(`未捕获到可用于编码的帧（framesReceived=${framesReceivedCount}）。`);
+        }
+
+        const gifBlob = await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error('gif render timeout')), 60000);
+          gif.on('finished', (blob) => {
+            clearTimeout(timeout);
+            resolve(blob);
+          });
+          gif.on('abort', (e) => {
+            clearTimeout(timeout);
+            reject(e || new Error('gif render aborted'));
+          });
+          gif.render();
+        });
+
+        downloadBlob(gifBlob, filename);
+        window.removeEventListener('message', onMessage);
+        iframe.remove();
+      } catch (e) {
+        console.error(e);
+        window.alert('导出逐笔GIF失败：' + (e && e.message ? e.message : String(e)));
+      } finally {
+        if (btnDownloadGifEl) {
+          btnDownloadGifEl.disabled = false;
+          btnDownloadGifEl.textContent = prevBtnText;
+        }
+      }
+    }
+
     async function renderAll() {
       svgContainerEl.innerHTML = '';
 
@@ -220,6 +786,10 @@
         svgContainerEl.innerHTML = '<p style="color:var(--fg-subtle)">请输入至少 1 个字符（建议汉字）。</p>';
         return;
       }
+
+      currentSingleChar = chars.length === 1 ? chars[0] : null;
+      btnDownloadGifEl.hidden = !currentSingleChar;
+      btnDownloadStepsEl.hidden = !currentSingleChar;
 
       const cols = Math.min(DEFAULT_COLS, chars.length);
       const rows = Math.ceil(chars.length / cols);
@@ -290,10 +860,14 @@
       renderAll();
     };
     const onDownloadClick = () => downloadCurrentSvg();
+    const onDownloadStepsClick = () => downloadCurrentStepsPngs();
+    const onDownloadGifClick = () => downloadCurrentStepsGif();
 
     sizeSelectEl.addEventListener('change', onSizeChange);
     colorSelectEl.addEventListener('change', onColorChange);
     btnDownloadEl.addEventListener('click', onDownloadClick);
+    btnDownloadStepsEl.addEventListener('click', onDownloadStepsClick);
+    btnDownloadGifEl.addEventListener('click', onDownloadGifClick);
 
     let mql = null;
     let onMqlChange = null;
@@ -314,6 +888,8 @@
       } catch (_) {}
       try {
         if (btnDownloadEl) btnDownloadEl.removeEventListener('click', onDownloadClick);
+        if (btnDownloadStepsEl) btnDownloadStepsEl.removeEventListener('click', onDownloadStepsClick);
+        if (btnDownloadGifEl) btnDownloadGifEl.removeEventListener('click', onDownloadGifClick);
         if (sizeSelectEl) sizeSelectEl.removeEventListener('change', onSizeChange);
         if (colorSelectEl) colorSelectEl.removeEventListener('change', onColorChange);
       } catch (_) {}

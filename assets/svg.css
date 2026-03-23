@@ -95,7 +95,15 @@
 .svg-page .export-group {
   display: flex;
   align-items: center;
-  gap: 0; /* 组内：文字 <-> 下拉框间距 */
+  gap: 8px; /* 组内：文字 <-> 下拉框间距 */
+}
+
+.svg-page .export-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .svg-page .export-group > span {
