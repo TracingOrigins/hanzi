@@ -428,11 +428,11 @@
     }
 
     async function downloadCurrentStepsGif() {
+      const prevBtnText = btnDownloadGifEl ? btnDownloadGifEl.textContent : '导出逐笔GIF';
       try {
         if (!currentSingleChar) return;
         if (mode !== 'export') return;
 
-        const prevBtnText = btnDownloadGifEl ? btnDownloadGifEl.textContent : null;
         if (btnDownloadGifEl) {
           btnDownloadGifEl.disabled = true;
           btnDownloadGifEl.textContent = '正在生成...';
@@ -463,10 +463,11 @@
         const useSelectedColor = !!(colorSelectEl && colorSelectEl.value && colorSelectEl.value !== 'default');
 
         // strokeColor 只用于基础描边/未书写状态，保持主题默认，避免用户选色后“未书写部分”也变色
-        const strokeColor = getCssVar('--writer-stroke');
+        const strokeColor = useSelectedColor ? selectedStrokeColor : getCssVar('--writer-stroke');
         // outline/highlight 使用默认主题颜色，避免用户选色后“轮廓”直接变成最终填充效果
         const outlineColor = getCssVar('--writer-outline');
-        const highlightColor = getCssVar('--writer-highlight');
+        // 正在书写的“高亮/当前笔画”需要跟随用户选择
+        const highlightColor = useSelectedColor ? selectedStrokeColor : getCssVar('--writer-highlight');
         // 仅“书写笔画”使用用户选的颜色（非 default 时）
         const drawingColor = useSelectedColor ? selectedStrokeColor : getCssVar('--writer-drawing');
 
@@ -772,7 +773,7 @@
       } finally {
         if (btnDownloadGifEl) {
           btnDownloadGifEl.disabled = false;
-          if (prevBtnText != null) btnDownloadGifEl.textContent = prevBtnText;
+          btnDownloadGifEl.textContent = prevBtnText;
         }
       }
     }
