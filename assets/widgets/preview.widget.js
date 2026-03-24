@@ -129,46 +129,6 @@
     optionsRowEl.className = 'export-options';
     controlsEl.appendChild(optionsRowEl);
 
-    const sizeGroupEl = document.createElement('div');
-    sizeGroupEl.className = 'export-group';
-
-    const sizeLabelEl = document.createElement('span');
-    sizeLabelEl.style.marginLeft = '0px';
-    sizeLabelEl.style.opacity = '0.8';
-    sizeLabelEl.textContent = '单格边长：';
-    sizeGroupEl.appendChild(sizeLabelEl);
-
-    const sizeSelectEl = document.createElement('select');
-    sizeSelectEl.id = 'sizeSelect';
-    sizeSelectEl.style.padding = '2px 6px';
-    sizeSelectEl.style.borderRadius = '6px';
-    sizeSelectEl.style.border = '1px solid var(--input-border)';
-    sizeSelectEl.style.background = 'var(--input-bg)';
-    sizeSelectEl.style.color = 'var(--button-text-color)';
-    // 下拉值：导出单格边长（px），相对 CELL_IMG_W 算缩放
-    [
-      { value: '16', label: '16px' },
-      { value: '32', label: '32px' },
-      { value: '48', label: '48px' },
-      { value: '64', label: '64px' },
-      { value: '128', label: '128px' },
-      { value: '256', label: '256px' },
-      { value: '512', label: '512px' }
-    ].forEach((opt) => {
-      const o = document.createElement('option');
-      o.value = opt.value;
-      o.textContent = opt.label;
-      o.style.color = 'var(--button-text-color)';
-      sizeSelectEl.appendChild(o);
-    });
-    {
-      const ic = normalizeText(hz);
-      sizeSelectEl.value =
-        ic.length === 1 ? String(PREVIEW_DISPLAY_CELL_SINGLE) : String(PREVIEW_DISPLAY_CELL_MULTI);
-    }
-    sizeGroupEl.appendChild(sizeSelectEl);
-    optionsRowEl.appendChild(sizeGroupEl);
-
     const colorGroupEl = document.createElement('div');
     colorGroupEl.className = 'export-group';
 
@@ -201,6 +161,38 @@
     });
     colorGroupEl.appendChild(colorSelectEl);
     optionsRowEl.appendChild(colorGroupEl);
+
+    const sizeGroupEl = document.createElement('div');
+    sizeGroupEl.className = 'export-group';
+
+    const sizeLabelEl = document.createElement('span');
+    sizeLabelEl.style.marginLeft = '0px';
+    sizeLabelEl.style.opacity = '0.8';
+    sizeLabelEl.textContent = '大小：';
+    sizeGroupEl.appendChild(sizeLabelEl);
+
+    const sizeSelectEl = document.createElement('select');
+    sizeSelectEl.id = 'sizeSelect';
+    sizeSelectEl.style.padding = '2px 6px';
+    sizeSelectEl.style.borderRadius = '6px';
+    sizeSelectEl.style.border = '1px solid var(--input-border)';
+    sizeSelectEl.style.background = 'var(--input-bg)';
+    sizeSelectEl.style.color = 'var(--button-text-color)';
+    // value 为像素边长，相对 CELL_IMG_W 算缩放
+    ['16', '32', '48', '64', '128', '256', '512'].forEach((v) => {
+      const o = document.createElement('option');
+      o.value = v;
+      o.textContent = v;
+      o.style.color = 'var(--button-text-color)';
+      sizeSelectEl.appendChild(o);
+    });
+    {
+      const ic = normalizeText(hz);
+      sizeSelectEl.value =
+        ic.length === 1 ? String(PREVIEW_DISPLAY_CELL_SINGLE) : String(PREVIEW_DISPLAY_CELL_MULTI);
+    }
+    sizeGroupEl.appendChild(sizeSelectEl);
+    optionsRowEl.appendChild(sizeGroupEl);
 
     const exportActionsEl = document.createElement('div');
     exportActionsEl.className = 'export-actions';
