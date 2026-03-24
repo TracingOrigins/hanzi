@@ -1,6 +1,6 @@
 /* Unified styles for both inline-svg and export-svg pages */
 
-.svg-page {
+.preview-page {
   /* 预览/导出独立页和首页挂载都共用该布局 */
   height: 100%;
   display: flex;
@@ -12,7 +12,7 @@
 }
 
 /* 内容高度不足时居中；超出时 auto 外边距退化为 0，从顶部开始显示 */
-.svg-page .svg-content {
+.preview-page .preview-content {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -20,7 +20,7 @@
   margin-bottom: auto;
 }
 
-.svg-page #svg-container {
+.preview-page #preview-container {
   width: 160px;
   height: 160px;
   display: flex;
@@ -34,14 +34,14 @@
 }
 
 /* inline 模式：DOM 直接插入 svg */
-.svg-page svg {
+.preview-page svg {
   width: 100%;
   height: 100%;
   fill: var(--writer-stroke);
 }
 
 /* export 模式：用 img 承载 svg blob */
-.svg-page img {
+.preview-page img {
   width: 100%;
   height: 100%;
   display: block;
@@ -51,7 +51,7 @@
 }
 
 /* export 模式：预览叠加“每格边框”，但不写入导出的 SVG 本体 */
-.svg-page.is-export .preview-grid-overlay {
+.preview-page.is-export .preview-grid-overlay {
   position: absolute;
   inset: 0;
   pointer-events: none; /* 右键保存应命中 img */
@@ -62,13 +62,13 @@
   z-index: 2;
 }
 
-.svg-page.is-export .preview-grid-overlay > div {
+.preview-page.is-export .preview-grid-overlay > div {
   box-sizing: border-box;
   border: 1px solid var(--border-color);
   border-radius: 8px;
 }
 
-.svg-page .export-controls {
+.preview-page .export-controls {
   margin-top: 20px;
   font-size: 14px;
   color: var(--writer-stroke);
@@ -78,7 +78,7 @@
   gap: 12px;
 }
 
-.svg-page .export-options {
+.preview-page .export-options {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -86,13 +86,13 @@
   flex-wrap: wrap;
 }
 
-.svg-page .export-group {
+.preview-page .export-group {
   display: flex;
   align-items: center;
   gap: 8px; /* 组内：文字 <-> 下拉框间距 */
 }
 
-.svg-page .export-actions {
+.preview-page .export-actions {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -100,20 +100,20 @@
   flex-wrap: wrap;
 }
 
-.svg-page .export-group > span {
+.preview-page .export-group > span {
   /* 防止默认行高/vertical-align 导致“文字”和“下拉框”上下不对齐 */
   display: inline-flex;
   align-items: center;
   line-height: 1.2;
 }
 
-.svg-page .export-group > select {
+.preview-page .export-group > select {
   align-self: center;
   line-height: 1.2;
 }
 
 /* inline 模式不显示提示文字 */
-.svg-page:not(.is-export) .export-controls {
+.preview-page:not(.is-export) .export-controls {
   display: none;
 }
 

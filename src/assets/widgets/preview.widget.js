@@ -107,35 +107,35 @@
     container.innerHTML = '';
 
     const wrapper = document.createElement('div');
-    wrapper.className = 'svg-page';
+    wrapper.className = 'preview-page';
     if (mode === 'export') wrapper.classList.add('is-export');
     container.appendChild(wrapper);
 
     const contentEl = document.createElement('div');
-    contentEl.className = 'svg-content';
+    contentEl.className = 'preview-content';
     wrapper.appendChild(contentEl);
 
     const svgContainerEl = document.createElement('div');
-    svgContainerEl.id = 'svg-container';
+    svgContainerEl.id = 'preview-container';
     contentEl.appendChild(svgContainerEl);
 
-    const infoEl = document.createElement('div');
-    infoEl.className = 'export-controls';
-    contentEl.appendChild(infoEl);
+    const controlsEl = document.createElement('div');
+    controlsEl.className = 'export-controls';
+    contentEl.appendChild(controlsEl);
 
     const optionsRowEl = document.createElement('div');
     optionsRowEl.className = 'export-options';
-    infoEl.appendChild(optionsRowEl);
+    controlsEl.appendChild(optionsRowEl);
 
     const sizeGroupEl = document.createElement('div');
     sizeGroupEl.className = 'export-group';
 
-    const sizeLabel1 = document.createElement('span');
-    sizeLabel1.style.marginLeft = '0px';
-    sizeLabel1.style.fontSize = '12px';
-    sizeLabel1.style.opacity = '0.8';
-    sizeLabel1.textContent = '尺寸：';
-    sizeGroupEl.appendChild(sizeLabel1);
+    const sizeLabelEl = document.createElement('span');
+    sizeLabelEl.style.marginLeft = '0px';
+    sizeLabelEl.style.fontSize = '12px';
+    sizeLabelEl.style.opacity = '0.8';
+    sizeLabelEl.textContent = '尺寸：';
+    sizeGroupEl.appendChild(sizeLabelEl);
 
     const sizeSelectEl = document.createElement('select');
     sizeSelectEl.id = 'sizeSelect';
@@ -144,7 +144,7 @@
     sizeSelectEl.style.borderRadius = '6px';
     sizeSelectEl.style.border = '1px solid var(--input-border)';
     sizeSelectEl.style.background = 'var(--input-bg)';
-    sizeSelectEl.style.color = 'var(--text-color)';
+    sizeSelectEl.style.color = 'var(--button-text-color)';
     [
       { value: '512', label: '512px' },
       { value: '1024', label: '1024px', selected: true },
@@ -153,6 +153,7 @@
       const o = document.createElement('option');
       o.value = opt.value;
       o.textContent = opt.label;
+      o.style.color = 'var(--button-text-color)';
       if (opt.selected) o.selected = true;
       sizeSelectEl.appendChild(o);
     });
@@ -176,7 +177,7 @@
     colorSelectEl.style.borderRadius = '6px';
     colorSelectEl.style.border = '1px solid var(--input-border)';
     colorSelectEl.style.background = 'var(--input-bg)';
-    colorSelectEl.style.color = 'var(--text-color)';
+    colorSelectEl.style.color = 'var(--button-text-color)';
 
     [
       { value: '#000000', label: '黑色' },
@@ -187,6 +188,7 @@
       const o = document.createElement('option');
       o.value = opt.value;
       o.textContent = opt.label;
+      o.style.color = 'var(--button-text-color)';
       if (opt.selected) o.selected = true;
       colorSelectEl.appendChild(o);
     });
@@ -228,7 +230,7 @@
     exportActionsEl.appendChild(btnDownloadStepsEl);
     exportActionsEl.appendChild(btnDownloadGifEl);
     exportActionsEl.appendChild(btnDownloadGifTransparentEl);
-    infoEl.appendChild(exportActionsEl);
+    controlsEl.appendChild(exportActionsEl);
 
     let currentObjectUrl = null;
     let currentSvgString = '';

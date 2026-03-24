@@ -19,6 +19,8 @@
   font-weight: 800;
   font-size: 32px;
   letter-spacing: 0.3px;
+  color: var(--text-color);
+  opacity: 0.86;
 }
 
 .index-search {
@@ -33,7 +35,7 @@
   border: 1px solid var(--input-border);
   border-radius: 12px;
   background: var(--input-bg);
-  color: var(--text-color);
+  color: var(--button-text-color);
   outline: none;
   font-size: 15px;
   font-weight: 500;
@@ -42,7 +44,7 @@
 }
 
 .index-search input[type='text']::placeholder {
-  color: color-mix(in srgb, var(--text-color) 70%, transparent);
+  color: color-mix(in srgb, var(--text-color) 45%, transparent);
 }
 
 .index-search input[type='text']:focus {
@@ -60,7 +62,7 @@
 
 .index-buttons .practice-button[aria-pressed='true'] {
   background-color: var(--button-hover);
-  color: var(--text-color);
+  color: var(--button-text-color);
   border-color: var(--writer-stroke);
 }
 
@@ -84,8 +86,37 @@
   justify-content: flex-start;
 }
 
-.index-mount .svg-page {
+.index-mount .preview-page {
   width: 100%;
   height: 100%;
+}
+
+.index-context-menu {
+  position: fixed;
+  z-index: 10000;
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-color);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.index-context-menu-item {
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  text-align: left;
+  background: transparent;
+  color: var(--text-color);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.index-context-menu-item:hover {
+  background: var(--button-hover);
 }
 
