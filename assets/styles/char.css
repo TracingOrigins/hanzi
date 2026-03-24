@@ -2,9 +2,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* 多字页面内容可能很长：从顶部开始渲染，避免把最上方行“居中挤出”视口。 */
   justify-content: flex-start;
-  /* 只禁止横向滚动，允许多行换行后在纵向正常显示 */
   overflow-x: auto;
   overflow-y: auto;
 }
@@ -13,17 +11,14 @@ body {
   width: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  /* 多字网格宽于视口时从左缘起算，避免居中导致滚不到最左 */
+  align-items: flex-start;
   justify-content: flex-start;
-  /* 当内容高度 <= 视口高度时整体上下居中；当内容高度超出时，auto 外边距会退化为 0，从顶部开始可滚动。 */
   margin-top: auto;
   margin-bottom: auto;
-  /* 统一管理每个字块的尺寸/边框样式（display 与 practice 只改变量值）。 */
   --writer-cell-size: 160px;
-  /* 多字网格里每个字块之间的间距（同时会影响容器宽度计算） */
   --writer-cell-gap: 8px;
   --writer-cell-border-radius: 8px;
-  /* 所有汉字统一边框样式，不区分展示/练习。 */
   --writer-cell-border-color: var(--border-color);
   --writer-cell-cursor: pointer;
   --multi-cols: 1;
@@ -35,11 +30,11 @@ body {
   grid-auto-rows: var(--writer-cell-size);
   gap: var(--writer-cell-gap);
   padding: 0;
-  /* 容器宽度与 multi-svg（同样的间距逻辑）保持一致：cols * size + (cols - 1) * gap */
   width: calc(
     var(--multi-cols, 1) * var(--writer-cell-size) +
       (var(--multi-cols, 1) - 1) * var(--writer-cell-gap)
   );
+  margin-inline: auto;
   height: auto;
 }
 
@@ -47,12 +42,10 @@ body {
   background: var(--bg-color);
   width: var(--writer-cell-size);
   height: var(--writer-cell-size);
-  box-sizing: border-box; /* 让边框不额外撑大外宽：外宽始终是 160px */
+  box-sizing: border-box;
   border-radius: var(--writer-cell-border-radius);
   border: 1px solid var(--writer-cell-border-color);
   cursor: var(--writer-cell-cursor);
-  /* 关键：防止 flex 在窄屏/窄容器时把字块缩小，
-     从而避免你感知到的“文字大小自适应”。 */
   flex: 0 0 auto;
 }
 
@@ -60,9 +53,9 @@ body {
   --writer-cell-cursor: default;
 }
 
-/* 多字练习页共用按钮样式容器：放在 writer 下方 */
 .practice-controls {
   margin-top: 20px;
+  width: 100%;
   display: flex;
   gap: 12px;
   justify-content: center;
@@ -70,8 +63,7 @@ body {
 
 .err {
   padding: 10px;
-  font-size: 13px;
+  font-size: var(--ui-font-size);
   color: var(--danger);
   line-height: 1.4;
 }
-

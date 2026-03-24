@@ -1,21 +1,24 @@
-/* Unified styles for both inline-svg and export-svg pages */
+/* 预览 / 导出：独立页与首页挂载共用 */
 
 .preview-page {
-  /* 预览/导出独立页和首页挂载都共用该布局 */
   height: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  /* 用 stretch，避免子列居中后宽图左右对称溢出、横向滚不到最左 */
+  align-items: stretch;
   justify-content: flex-start;
   overflow: auto;
   width: 100%;
 }
 
-/* 内容高度不足时居中；超出时 auto 外边距退化为 0，从顶部开始显示 */
+/* 内容偏少时垂直居中；超出时 margin 失效，从顶部排布 */
 .preview-page .preview-content {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   margin-top: auto;
   margin-bottom: auto;
 }
@@ -26,21 +29,20 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  box-sizing: border-box; /* 边框不改变外部 160x160 尺寸 */
+  box-sizing: border-box;
   background-color: var(--bg-color);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   position: relative;
+  margin-inline: auto;
 }
 
-/* inline 模式：DOM 直接插入 svg */
 .preview-page svg {
   width: 100%;
   height: 100%;
   fill: var(--writer-stroke);
 }
 
-/* export 模式：用 img 承载 svg blob */
 .preview-page img {
   width: 100%;
   height: 100%;
@@ -50,11 +52,11 @@
   z-index: 1;
 }
 
-/* export 模式：预览叠加“每格边框”，但不写入导出的 SVG 本体 */
+/* 导出：叠加格线预览，不写入导出文件 */
 .preview-page.is-export .preview-grid-overlay {
   position: absolute;
   inset: 0;
-  pointer-events: none; /* 右键保存应命中 img */
+  pointer-events: none;
   display: grid;
   grid-template-columns: repeat(var(--preview-cols, 1), var(--preview-cell, 160px));
   grid-template-rows: repeat(var(--preview-rows, 1), var(--preview-cell, 160px));
@@ -70,7 +72,10 @@
 
 .preview-page .export-controls {
   margin-top: 20px;
-  font-size: 14px;
+  align-self: stretch;
+  width: 100%;
+  box-sizing: border-box;
+  font-size: var(--ui-font-size);
   color: var(--writer-stroke);
   display: flex;
   flex-direction: column;
@@ -82,14 +87,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 18px; /* 尺寸组 <-> 颜色组之间间距 */
+  gap: 18px;
   flex-wrap: wrap;
 }
 
 .preview-page .export-group {
   display: flex;
   align-items: center;
-  gap: 8px; /* 组内：文字 <-> 下拉框间距 */
+  gap: 8px;
 }
 
 .preview-page .export-actions {
@@ -101,19 +106,43 @@
 }
 
 .preview-page .export-group > span {
-  /* 防止默认行高/vertical-align 导致“文字”和“下拉框”上下不对齐 */
   display: inline-flex;
   align-items: center;
   line-height: 1.2;
+  font-size: var(--ui-font-size);
 }
 
 .preview-page .export-group > select {
   align-self: center;
   line-height: 1.2;
+  font-size: var(--ui-font-size);
+  border-color: var(--input-border) !important;
+  outline: none;
+  box-shadow: none;
 }
 
-/* inline 模式不显示提示文字 */
+.preview-page .export-group > select:focus,
+.preview-page .export-group > select:focus-visible,
+.preview-page .export-group > select:active {
+  border-color: var(--input-border) !important;
+  outline: none;
+  box-shadow: none;
+}
+
+.preview-page .preview-inline-msg {
+  margin: 0;
+  font-size: var(--ui-font-size);
+  line-height: 1.4;
+}
+
+.preview-page .preview-inline-msg--muted {
+  color: color-mix(in srgb, var(--text-color) 55%, transparent);
+}
+
+.preview-page .preview-inline-msg--danger {
+  color: var(--danger);
+}
+
 .preview-page:not(.is-export) .export-controls {
   display: none;
 }
-

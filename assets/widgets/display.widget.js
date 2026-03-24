@@ -1,4 +1,4 @@
-/* 可挂载的演示/练习组件（替代 iframe/整页嵌入） */
+/* 演示 / 练习：可挂载组件 */
 (function () {
   const root = (window.HanziWidgets = window.HanziWidgets || {});
   const api = (root.display = root.display || {});
@@ -14,11 +14,25 @@
       .filter(Boolean);
   }
 
+  // 单格边长：单字 256、多字 128（基准栅格 160，与预览/导出一致）
+  const DISPLAY_CELL_SINGLE = 256;
+  const DISPLAY_CELL_MULTI = 128;
+  const DISPLAY_BASE_PX = 160;
+  const DISPLAY_BASE_GAP = 8;
+  const DISPLAY_BASE_RADIUS = 8;
+
+  function applyWriterCellMetrics(root, charCount) {
+    const cellPx = charCount === 1 ? DISPLAY_CELL_SINGLE : DISPLAY_CELL_MULTI;
+    const ratio = cellPx / DISPLAY_BASE_PX;
+    root.style.setProperty('--writer-cell-size', `${cellPx}px`);
+    root.style.setProperty('--writer-cell-gap', `${Math.round(DISPLAY_BASE_GAP * ratio)}px`);
+    root.style.setProperty('--writer-cell-border-radius', `${Math.max(4, Math.round(DISPLAY_BASE_RADIUS * ratio))}px`);
+  }
+
   api.mount = function mount(container, opts = {}) {
     const { hz = '汉', mode = 'display' } = opts;
     if (!container) throw new Error('display widget: container is required');
 
-    // 让组件拥有自己的 DOM 生命周期
     container.innerHTML = '';
 
     const rootEl = document.createElement('div');
@@ -30,7 +44,6 @@
 
     rootEl.appendChild(gridEl);
 
-    // 练习模式才显示控制按钮
     const isPractice = mode === 'practice';
     let controlsEl = null;
     let btnPlayEl = null;
@@ -123,7 +136,7 @@
       const writer = buildWriter(targetId, ch);
       writers.push(writer);
 
-      // 演示模式：点击单字重新播放该字动画
+      // 演示：点击格子重播该字
       if (!isPractice) {
         target.addEventListener('click', () => {
           ++sequenceToken;
@@ -155,7 +168,9 @@
         return;
       }
 
-      // 与 preview 的布局策略保持一致：最多 7 列，列数只由字符数量决定。
+      applyWriterCellMetrics(rootEl, chars.length);
+
+      // 最多 7 列，列数仅随字数变化（与预览页一致）
       const cols = Math.min(7, chars.length);
       rootEl.style.setProperty('--multi-cols', String(cols));
       chars.forEach((ch, idx) => createWriterTarget(ch, idx));
@@ -254,13 +269,11 @@
       btnQuizEl.addEventListener('click', () => quizAllSequential());
     }
 
-    // 初次渲染 + 演示模式默认自动播放
     renderText(hz);
     (async () => {
       await playAllSequential();
     })();
 
-    // 深色模式切换：重渲染并回到演示动画
     let mql = null;
     let onChange = null;
     try {
@@ -274,7 +287,6 @@
       mql.addEventListener('change', onChange);
     } catch (_) {}
 
-    // mount 返回 cleanup：切换 tab / 搜索框刷新时会调用
     return () => {
       ++sequenceToken;
       cancelAll();

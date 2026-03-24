@@ -92,7 +92,7 @@
         cleanup = null;
       }
 
-      // display / practice
+      // 演示 / 练习
       if (key === 'display' || key === 'practice') {
         if (window.HanziWidgets && window.HanziWidgets.display && window.HanziWidgets.display.mount) {
           cleanup = window.HanziWidgets.display.mount(mountAreaEl, {
@@ -103,7 +103,7 @@
         return;
       }
 
-      // preview / export
+      // 预览 / 导出
       if (key === 'preview' || key === 'export') {
         if (window.HanziWidgets && window.HanziWidgets.preview && window.HanziWidgets.preview.mount) {
           cleanup = window.HanziWidgets.preview.mount(mountAreaEl, {
