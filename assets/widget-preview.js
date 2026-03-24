@@ -19,6 +19,12 @@
   const CELL_IMG_W = 160;
   const CELL_IMG_H = 160;
   const CELL_GAP_PX = 8;
+  const GIF_FRAME_DELAY_MS = 80;
+  const GIF_FINAL_DELAY_MS = 500;
+  const IFRAME_LOAD_TIMEOUT_MS = 10000;
+  const GIF_DONE_MAX_WAIT_MS = 30000;
+  const GIF_DONE_SETTLE_MS = 800;
+  const GIF_RENDER_TIMEOUT_MS = 60000;
 
   // 与 DOM 渲染保持一致的“padding->缩放/平移”映射：
   // DOM 里 HanziWriter 使用 padding = Math.round(size * 0.14)，且 size=160。
@@ -428,63 +434,8 @@
       }
     }
 
-    async function downloadCurrentStepsGif() {
-      const prevBtnText = btnDownloadGifEl ? btnDownloadGifEl.textContent : '导出逐笔GIF';
-      const runId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      let iframe = null;
-      let onMessage = null;
-      try {
-        if (!currentSingleChar) return;
-        if (mode !== 'export') return;
-
-        if (btnDownloadGifEl) {
-          btnDownloadGifEl.disabled = true;
-          btnDownloadGifEl.textContent = '正在生成...';
-        }
-
-        const sizeScale = getSizeScale();
-        const pixelSize = CELL_IMG_W * sizeScale;
-        const filename = `${currentSingleChar}.gif`;
-        const workerUrl = await ensureGifJsOptimizedLoaded();
-        const bgColor = getCssVar('--bg-color') || '#ffffff';
-
-        const gif = new window.GIF({
-          workers: 2,
-          quality: 10,
-          workerScript: workerUrl,
-          repeat: 0,
-          // 不要把画面中的透明像素编码成 GIF 透明背景
-          transparent: null,
-          // gif.js 在 render 时要求全局 width/height 存在
-          width: Math.round(pixelSize),
-          height: Math.round(pixelSize)
-        });
-
-        const frameDelayMs = 80;
-        const finalDelayMs = 500;
-
-        const selectedStrokeColor = getStrokeColorForExport();
-        const useSelectedColor = !!(colorSelectEl && colorSelectEl.value);
-
-        // strokeColor 只用于基础描边/未书写状态，保持主题默认，避免用户选色后“未书写部分”也变色
-        const strokeColor = useSelectedColor ? selectedStrokeColor : getCssVar('--writer-stroke');
-        // outline/highlight 使用默认主题颜色，避免用户选色后“轮廓”直接变成最终填充效果
-        const outlineColor = getCssVar('--writer-outline');
-        // 正在书写的“高亮/当前笔画”需要跟随用户选择
-        const highlightColor = useSelectedColor ? selectedStrokeColor : getCssVar('--writer-highlight');
-        // 仅“书写笔画”使用用户选的颜色（非 default 时）
-        const drawingColor = useSelectedColor ? selectedStrokeColor : getCssVar('--writer-drawing');
-
-        iframe = document.createElement('iframe');
-        iframe.style.position = 'fixed';
-        iframe.style.left = '-99999px';
-        iframe.style.top = '-99999px';
-        iframe.style.width = '1px';
-        iframe.style.height = '1px';
-        iframe.style.border = '0';
-
-        // 注意：使用 srcdoc + 同域渲染，避免 clip-path 在父文档 Blob/rasterize 场景失效
-        iframe.srcdoc = `
+    function buildGifCaptureIframeSrcdoc(pixelSize, showOutline) {
+      return `
 <!DOCTYPE html>
 <html>
   <head>
@@ -569,7 +520,6 @@
         return new Promise((resolve) => {
           canvas.toBlob((b) => {
             if (b) return resolve(b);
-            // 某些情况下 toBlob 返回 null：兜底走 dataURL 再转成 blob
             const dataUrl = canvas.toDataURL('image/png');
             fetch(dataUrl).then(r => r.blob()).then(resolve);
           }, 'image/png');
@@ -591,8 +541,7 @@
           height: pixelSize,
           padding: Math.round(pixelSize * 0.14),
           showCharacter: false,
-          // 展示“未书写部分”的默认轮廓颜色；用户选色只影响真正书写的笔画
-          showOutline: true,
+          showOutline: ${showOutline ? 'true' : 'false'},
           strokeColor,
           outlineColor,
           highlightColor,
@@ -608,7 +557,6 @@
           const svgEl = targetEl.querySelector('svg');
           let canvas = null;
           if (!svgEl) {
-            // 避免缺帧导致父页面按序 flush 永远等不到后续帧
             canvas = document.createElement('canvas');
             canvas.width = pixelSize;
             canvas.height = pixelSize;
@@ -621,7 +569,6 @@
           parent.postMessage({ type: 'frame', runId, index, isFinal, pngBlob }, '*');
         };
 
-        // 动画启动后再采样（等待 svg 渲染出第一帧，避免首帧 svg 为空导致缺帧）
         await sleep(80);
         let idx = 0;
 
@@ -641,18 +588,101 @@
     </script>
   </body>
 </html>
-        `.trim();
+      `.trim();
+    }
 
+    function waitForIframeDoneWithSettle(getDoneState) {
+      return new Promise((resolve) => {
+        const startedAt = Date.now();
+        const check = setInterval(() => {
+          const elapsed = Date.now() - startedAt;
+          if (getDoneState() && elapsed > GIF_DONE_SETTLE_MS) {
+            clearInterval(check);
+            resolve();
+          }
+          if (elapsed > GIF_DONE_MAX_WAIT_MS) {
+            clearInterval(check);
+            resolve();
+          }
+        }, 50);
+      });
+    }
+
+    function processTransparentGifCanvas(ctx, canvas) {
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const px = imageData.data;
+      for (let i = 0; i < px.length; i += 4) {
+        const a = px[i + 3];
+        if (a < 80) {
+          px[i] = 0;
+          px[i + 1] = 0;
+          px[i + 2] = 0;
+          px[i + 3] = 0;
+        } else {
+          px[i + 3] = 255;
+        }
+      }
+      ctx.putImageData(imageData, 0, 0);
+    }
+
+    async function runStepsGifExport({
+      buttonEl,
+      fallbackBtnText,
+      buildingBtnText,
+      errorTitle,
+      filenameSuffix,
+      showOutline,
+      gifTransparent,
+      colors,
+      prepareFrameCanvas
+    }) {
+      const prevBtnText = buttonEl ? buttonEl.textContent : fallbackBtnText;
+      const runId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      let iframe = null;
+      let onMessage = null;
+      try {
+        if (!currentSingleChar) return;
+        if (mode !== 'export') return;
+
+        if (buttonEl) {
+          buttonEl.disabled = true;
+          buttonEl.textContent = buildingBtnText;
+        }
+
+        const sizeScale = getSizeScale();
+        const pixelSize = CELL_IMG_W * sizeScale;
+        const filename = `${currentSingleChar}${filenameSuffix}.gif`;
+        const workerUrl = await ensureGifJsOptimizedLoaded();
+
+        const gif = new window.GIF({
+          workers: 2,
+          quality: 10,
+          workerScript: workerUrl,
+          repeat: 0,
+          transparent: gifTransparent,
+          width: Math.round(pixelSize),
+          height: Math.round(pixelSize)
+        });
+
+        const frameDelayMs = GIF_FRAME_DELAY_MS;
+        const finalDelayMs = GIF_FINAL_DELAY_MS;
+
+        iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.left = '-99999px';
+        iframe.style.top = '-99999px';
+        iframe.style.width = '1px';
+        iframe.style.height = '1px';
+        iframe.style.border = '0';
+        iframe.srcdoc = buildGifCaptureIframeSrcdoc(pixelSize, showOutline);
         document.body.appendChild(iframe);
 
-        // 等 iframe DOM & 事件监听器 ready，再发送 start，避免 message 丢失
         await new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error('iframe load timeout')), 10000);
+          const timeout = setTimeout(() => reject(new Error('iframe load timeout')), IFRAME_LOAD_TIMEOUT_MS);
           iframe.onload = () => {
             clearTimeout(timeout);
             resolve();
           };
-          // srcdoc 有时 onload 可能不触发：兜底等待一小段时间再 resolve
           setTimeout(() => {
             clearTimeout(timeout);
             resolve();
@@ -663,7 +693,6 @@
         let expectedIndex = 0;
         let addChain = Promise.resolve();
         let doneReceived = false;
-        let lastIndexReceived = null;
         let framesReceivedCount = 0;
         let framesAddedCount = 0;
 
@@ -676,21 +705,17 @@
             addChain = addChain.then(async () => {
               const url = URL.createObjectURL(pngBlob);
               const img = new Image();
-              const w = pixelSize;
-              const h = pixelSize;
               await new Promise((resolve, reject) => {
                 img.onload = resolve;
                 img.onerror = reject;
                 img.src = url;
               });
+
               const canvas = document.createElement('canvas');
-              canvas.width = Math.round(w);
-              canvas.height = Math.round(h);
+              canvas.width = Math.round(pixelSize);
+              canvas.height = Math.round(pixelSize);
               const ctx = canvas.getContext('2d');
-              // 先铺底色，确保导出 GIF 背景为不透明
-              ctx.fillStyle = bgColor;
-              ctx.fillRect(0, 0, canvas.width, canvas.height);
-              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              prepareFrameCanvas(ctx, canvas, img);
               URL.revokeObjectURL(url);
 
               framesAddedCount++;
@@ -710,31 +735,11 @@
             pending.set(msg.index, { pngBlob: msg.pngBlob, isFinal: msg.isFinal });
             tryFlush();
           }
-          if (msg.type === 'done') {
-            doneReceived = true;
-            lastIndexReceived = typeof msg.lastIndex === 'number' ? msg.lastIndex : null;
-            // done 后等待 addChain 里最后的帧 flush 完成
-            // gif.render 我们放到外面等待 done+addChain
-          }
+          if (msg.type === 'done') doneReceived = true;
         };
-
         window.addEventListener('message', onMessage);
 
-        // 等待 iframe 结束后编码
-        // done 后等待一小段时间，确保最后一帧也入队/编码完毕（避免由于丢帧导致永远等待）
-        const donePromise = new Promise((resolve) => {
-          const startedAt = Date.now();
-          const check = setInterval(() => {
-            if (doneReceived && Date.now() - startedAt > 800) {
-              clearInterval(check);
-              resolve();
-            }
-            if (Date.now() - startedAt > 30000) {
-              clearInterval(check);
-              resolve();
-            }
-          }, 50);
-        });
+        const donePromise = waitForIframeDoneWithSettle(() => doneReceived);
 
         iframe.contentWindow.postMessage(
           {
@@ -742,10 +747,10 @@
             runId,
             hz: currentSingleChar,
             pixelSize,
-            strokeColor,
-            outlineColor,
-            highlightColor,
-            drawingColor,
+            strokeColor: colors.strokeColor,
+            outlineColor: colors.outlineColor,
+            highlightColor: colors.highlightColor,
+            drawingColor: colors.drawingColor,
             frameDelayMs,
             finalDelayMs
           },
@@ -753,7 +758,6 @@
         );
 
         await donePromise;
-        // 等待所有帧加入 gif 完成
         await addChain;
 
         if (framesAddedCount === 0) {
@@ -761,7 +765,7 @@
         }
 
         const gifBlob = await new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error('gif render timeout')), 60000);
+          const timeout = setTimeout(() => reject(new Error('gif render timeout')), GIF_RENDER_TIMEOUT_MS);
           gif.on('finished', (blob) => {
             clearTimeout(timeout);
             resolve(blob);
@@ -776,7 +780,7 @@
         downloadBlob(gifBlob, filename);
       } catch (e) {
         console.error(e);
-        window.alert('导出逐笔GIF失败：' + (e && e.message ? e.message : String(e)));
+        window.alert(`${errorTitle}：` + (e && e.message ? e.message : String(e)));
       } finally {
         try {
           if (onMessage) window.removeEventListener('message', onMessage);
@@ -784,367 +788,65 @@
         try {
           if (iframe) iframe.remove();
         } catch (_) {}
-        if (btnDownloadGifEl) {
-          btnDownloadGifEl.disabled = false;
-          btnDownloadGifEl.textContent = prevBtnText;
+        if (buttonEl) {
+          buttonEl.disabled = false;
+          buttonEl.textContent = prevBtnText;
         }
       }
     }
 
-    async function downloadCurrentTransparentStepsGif() {
-      const prevBtnText = btnDownloadGifTransparentEl
-        ? btnDownloadGifTransparentEl.textContent
-        : '导出透明逐笔GIF';
-      const runId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      let iframe = null;
-      let onMessage = null;
-      try {
-        if (!currentSingleChar) return;
-        if (mode !== 'export') return;
+    async function downloadCurrentStepsGif() {
+      const selectedStrokeColor = getStrokeColorForExport();
+      const useSelectedColor = !!(colorSelectEl && colorSelectEl.value);
+      const bgColor = getCssVar('--bg-color') || '#ffffff';
+      const colors = {
+        strokeColor: useSelectedColor ? selectedStrokeColor : getCssVar('--writer-stroke'),
+        outlineColor: getCssVar('--writer-outline'),
+        highlightColor: useSelectedColor ? selectedStrokeColor : getCssVar('--writer-highlight'),
+        drawingColor: useSelectedColor ? selectedStrokeColor : getCssVar('--writer-drawing')
+      };
 
-        if (btnDownloadGifTransparentEl) {
-          btnDownloadGifTransparentEl.disabled = true;
-          btnDownloadGifTransparentEl.textContent = '正在生成...';
+      await runStepsGifExport({
+        buttonEl: btnDownloadGifEl,
+        fallbackBtnText: '导出逐笔GIF',
+        buildingBtnText: '正在生成...',
+        errorTitle: '导出逐笔GIF失败',
+        filenameSuffix: '',
+        showOutline: true,
+        gifTransparent: null,
+        colors,
+        prepareFrameCanvas: (ctx, canvas, img) => {
+          ctx.fillStyle = bgColor;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         }
-
-        const sizeScale = getSizeScale();
-        const pixelSize = CELL_IMG_W * sizeScale;
-        const filename = `${currentSingleChar}-transparent.gif`;
-        const workerUrl = await ensureGifJsOptimizedLoaded();
-
-        const gif = new window.GIF({
-          workers: 2,
-          quality: 10,
-          workerScript: workerUrl,
-          repeat: 0,
-          // 不使用键色铺底，直接保留透明通道并指定透明索引色
-          transparent: 0x000000,
-          width: Math.round(pixelSize),
-          height: Math.round(pixelSize)
-        });
-
-        const frameDelayMs = 80;
-        const finalDelayMs = 500;
-
-        const selectedStrokeColor = getStrokeColorForExport();
-        const strokeColor = selectedStrokeColor;
-        const outlineColor = selectedStrokeColor;
-        const highlightColor = selectedStrokeColor;
-        const drawingColor = selectedStrokeColor;
-
-        iframe = document.createElement('iframe');
-        iframe.style.position = 'fixed';
-        iframe.style.left = '-99999px';
-        iframe.style.top = '-99999px';
-        iframe.style.width = '1px';
-        iframe.style.height = '1px';
-        iframe.style.border = '0';
-
-        iframe.srcdoc = `
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <style>
-      html, body { margin: 0; padding: 0; background: transparent; }
-      #target { width: ${pixelSize}px; height: ${pixelSize}px; }
-    </style>
-    <script src="https://cdn.jsdelivr.net/npm/hanzi-writer@3.5/dist/hanzi-writer.min.js"></script>
-  </head>
-  <body>
-    <div id="target"></div>
-    <script>
-      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-      function normalizeSvgClipUrls(svgText) {
-        if (!svgText) return svgText;
-        const coarse = svgText
-          .replace(/url\\(\\s*\"[^#\"]*#([^\"#)]+)\"\\s*\\)/gi, 'url(#$1)')
-          .replace(/url\\(\\s*'[^#']*#([^'#)]+)'\\s*\\)/gi, 'url(#$1)')
-          .replace(/url\\(\\s*&quot;[^#&]*#([^&]+)&quot;\\s*\\)/gi, 'url(#$1)')
-          .replace(/url\\(\\s*&apos;[^#&]*#([^&]+)&apos;\\s*\\)/gi, 'url(#$1)')
-          .replace(/url\\(\\s*[^#\\s)]+#([^\\)\\s]+)\\s*\\)/gi, 'url(#$1)');
-
-        try {
-          const parser = new DOMParser();
-          const doc = parser.parseFromString(coarse, 'image/svg+xml');
-          const idFromUrl = (raw) => {
-            if (!raw) return null;
-            const m = raw.match(/#([^)\"']+)/);
-            return m ? m[1] : null;
-          };
-
-          const nodes = doc.querySelectorAll('*');
-          nodes.forEach((el) => {
-            const clipPath = el.getAttribute('clip-path');
-            if (clipPath) {
-              const id = idFromUrl(clipPath);
-              if (id) el.setAttribute('clip-path', 'url(#' + id + ')');
-            }
-
-            const style = el.getAttribute('style');
-            if (style && /clip-path\\s*:/i.test(style)) {
-              const nextStyle = style.replace(
-                /clip-path\\s*:\\s*url\\(([^)]+)\\)/gi,
-                (_all, urlPart) => {
-                  const id = idFromUrl(urlPart);
-                  return id ? ('clip-path:url(#' + id + ')') : _all;
-                }
-              );
-              el.setAttribute('style', nextStyle);
-            }
-          });
-
-          return new XMLSerializer().serializeToString(doc.documentElement);
-        } catch (_) {
-          return coarse;
-        }
-      }
-
-      async function renderSvgToCanvasInIframe(svgString, width, height) {
-        const safeSvg = normalizeSvgClipUrls(svgString);
-        const svgBlob = new Blob([safeSvg], { type: 'image/svg+xml;charset=utf-8' });
-        const svgUrl = URL.createObjectURL(svgBlob);
-        const img = new Image();
-        img.decoding = 'async';
-        img.src = svgUrl;
-        await new Promise((resolve, reject) => {
-          img.onload = () => resolve();
-          img.onerror = (e) => reject(e);
-        });
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(width));
-        canvas.height = Math.max(1, Math.round(height));
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        URL.revokeObjectURL(svgUrl);
-        return canvas;
-      }
-
-      function canvasToPngBlob(canvas) {
-        return new Promise((resolve) => {
-          canvas.toBlob((b) => {
-            if (b) return resolve(b);
-            const dataUrl = canvas.toDataURL('image/png');
-            fetch(dataUrl).then(r => r.blob()).then(resolve);
-          }, 'image/png');
-        });
-      }
-
-      window.addEventListener('message', async (ev) => {
-        const msg = ev.data || {};
-        if (msg.type !== 'start') return;
-        const runId = msg.runId;
-        if (!runId) return;
-
-        const { hz, pixelSize, strokeColor, outlineColor, highlightColor, drawingColor, frameDelayMs, finalDelayMs } = msg;
-        const targetEl = document.getElementById('target');
-
-        targetEl.innerHTML = '';
-        const writer = HanziWriter.create('target', hz, {
-          width: pixelSize,
-          height: pixelSize,
-          padding: Math.round(pixelSize * 0.14),
-          showCharacter: false,
-          showOutline: false,
-          strokeColor,
-          outlineColor,
-          highlightColor,
-          drawingColor,
-          charDataLoader: (char, onComplete) => {
-            fetch('https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0/' + char + '.json')
-              .then(res => { if (!res.ok) throw new Error('load failed'); return res.json(); })
-              .then(onComplete);
-          }
-        });
-
-        const captureFrame = async (index, isFinal) => {
-          const svgEl = targetEl.querySelector('svg');
-          let canvas = null;
-          if (!svgEl) {
-            canvas = document.createElement('canvas');
-            canvas.width = pixelSize;
-            canvas.height = pixelSize;
-          } else {
-            const svgText = new XMLSerializer().serializeToString(svgEl);
-            canvas = await renderSvgToCanvasInIframe(svgText, pixelSize, pixelSize);
-          }
-          const pngBlob = await canvasToPngBlob(canvas);
-          if (!pngBlob) return;
-          parent.postMessage({ type: 'frame', runId, index, isFinal, pngBlob }, '*');
-        };
-
-        await sleep(80);
-        let idx = 0;
-
-        const interval = setInterval(() => {
-          captureFrame(idx++, false);
-        }, frameDelayMs);
-
-        writer.animateCharacter({
-          onComplete: async () => {
-            clearInterval(interval);
-            await sleep(finalDelayMs > 0 ? 20 : 0);
-            await captureFrame(idx, true);
-            parent.postMessage({ type: 'done', runId, lastIndex: idx }, '*');
-          }
-        });
       });
-    </script>
-  </body>
-</html>
-        `.trim();
+    }
 
-        document.body.appendChild(iframe);
+    async function downloadCurrentTransparentStepsGif() {
+      const selectedStrokeColor = getStrokeColorForExport();
+      const colors = {
+        strokeColor: selectedStrokeColor,
+        outlineColor: selectedStrokeColor,
+        highlightColor: selectedStrokeColor,
+        drawingColor: selectedStrokeColor
+      };
 
-        await new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error('iframe load timeout')), 10000);
-          iframe.onload = () => {
-            clearTimeout(timeout);
-            resolve();
-          };
-          setTimeout(() => {
-            clearTimeout(timeout);
-            resolve();
-          }, 300);
-        });
-
-        const pending = new Map();
-        let expectedIndex = 0;
-        let addChain = Promise.resolve();
-        let doneReceived = false;
-        let framesReceivedCount = 0;
-        let framesAddedCount = 0;
-
-        function tryFlush() {
-          while (pending.has(expectedIndex)) {
-            const frame = pending.get(expectedIndex);
-            pending.delete(expectedIndex);
-            const { pngBlob, isFinal } = frame;
-
-            addChain = addChain.then(async () => {
-              const url = URL.createObjectURL(pngBlob);
-              const img = new Image();
-              const w = pixelSize;
-              const h = pixelSize;
-              await new Promise((resolve, reject) => {
-                img.onload = resolve;
-                img.onerror = reject;
-                img.src = url;
-              });
-              const canvas = document.createElement('canvas');
-              canvas.width = Math.round(w);
-              canvas.height = Math.round(h);
-              const ctx = canvas.getContext('2d');
-              // 保持透明底，避免键色污染；同时把半透明边缘二值化，减少暗边/彩边
-              ctx.clearRect(0, 0, canvas.width, canvas.height);
-              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-              const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-              const px = imageData.data;
-              for (let i = 0; i < px.length; i += 4) {
-                const a = px[i + 3];
-                if (a < 80) {
-                  px[i] = 0;
-                  px[i + 1] = 0;
-                  px[i + 2] = 0;
-                  px[i + 3] = 0;
-                } else {
-                  px[i + 3] = 255;
-                }
-              }
-              ctx.putImageData(imageData, 0, 0);
-              URL.revokeObjectURL(url);
-
-              framesAddedCount++;
-              gif.addFrame(canvas, { delay: isFinal ? finalDelayMs : frameDelayMs, copy: true });
-            });
-
-            expectedIndex++;
-          }
+      await runStepsGifExport({
+        buttonEl: btnDownloadGifTransparentEl,
+        fallbackBtnText: '导出透明逐笔GIF',
+        buildingBtnText: '正在生成...',
+        errorTitle: '导出透明逐笔GIF失败',
+        filenameSuffix: '-transparent',
+        showOutline: false,
+        gifTransparent: 0x000000,
+        colors,
+        prepareFrameCanvas: (ctx, canvas, img) => {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          processTransparentGifCanvas(ctx, canvas);
         }
-
-        onMessage = (ev) => {
-          if (!iframe || !iframe.contentWindow || ev.source !== iframe.contentWindow) return;
-          const msg = ev.data || {};
-          if (msg.runId !== runId) return;
-          if (msg.type === 'frame') {
-            framesReceivedCount++;
-            pending.set(msg.index, { pngBlob: msg.pngBlob, isFinal: msg.isFinal });
-            tryFlush();
-          }
-          if (msg.type === 'done') {
-            doneReceived = true;
-          }
-        };
-
-        window.addEventListener('message', onMessage);
-
-        const donePromise = new Promise((resolve) => {
-          const startedAt = Date.now();
-          const check = setInterval(() => {
-            if (doneReceived && Date.now() - startedAt > 800) {
-              clearInterval(check);
-              resolve();
-            }
-            if (Date.now() - startedAt > 30000) {
-              clearInterval(check);
-              resolve();
-            }
-          }, 50);
-        });
-
-        iframe.contentWindow.postMessage(
-          {
-            type: 'start',
-            runId,
-            hz: currentSingleChar,
-            pixelSize,
-            strokeColor,
-            outlineColor,
-            highlightColor,
-            drawingColor,
-            frameDelayMs,
-            finalDelayMs
-          },
-          '*'
-        );
-
-        await donePromise;
-        await addChain;
-
-        if (framesAddedCount === 0) {
-          throw new Error(`未捕获到可用于编码的帧（framesReceived=${framesReceivedCount}）。`);
-        }
-
-        const gifBlob = await new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error('gif render timeout')), 60000);
-          gif.on('finished', (blob) => {
-            clearTimeout(timeout);
-            resolve(blob);
-          });
-          gif.on('abort', (e) => {
-            clearTimeout(timeout);
-            reject(e || new Error('gif render aborted'));
-          });
-          gif.render();
-        });
-
-        downloadBlob(gifBlob, filename);
-      } catch (e) {
-        console.error(e);
-        window.alert('导出透明逐笔GIF失败：' + (e && e.message ? e.message : String(e)));
-      } finally {
-        try {
-          if (onMessage) window.removeEventListener('message', onMessage);
-        } catch (_) {}
-        try {
-          if (iframe) iframe.remove();
-        } catch (_) {}
-        if (btnDownloadGifTransparentEl) {
-          btnDownloadGifTransparentEl.disabled = false;
-          btnDownloadGifTransparentEl.textContent = prevBtnText;
-        }
-      }
+      });
     }
 
     async function renderAll() {
