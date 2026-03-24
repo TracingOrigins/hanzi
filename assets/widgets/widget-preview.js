@@ -111,13 +111,17 @@
     if (mode === 'export') wrapper.classList.add('is-export');
     container.appendChild(wrapper);
 
+    const contentEl = document.createElement('div');
+    contentEl.className = 'svg-content';
+    wrapper.appendChild(contentEl);
+
     const svgContainerEl = document.createElement('div');
     svgContainerEl.id = 'svg-container';
-    wrapper.appendChild(svgContainerEl);
+    contentEl.appendChild(svgContainerEl);
 
     const infoEl = document.createElement('div');
     infoEl.className = 'export-controls';
-    wrapper.appendChild(infoEl);
+    contentEl.appendChild(infoEl);
 
     const optionsRowEl = document.createElement('div');
     optionsRowEl.className = 'export-options';
@@ -229,6 +233,12 @@
     let currentObjectUrl = null;
     let currentSvgString = '';
     let currentSingleChar = null;
+    const downloadUtils = window.HanziUtils && window.HanziUtils.download;
+    const rasterizeUtils = window.HanziUtils && window.HanziUtils.svgRasterize;
+
+    if (!downloadUtils || !rasterizeUtils) {
+      throw new Error('preview widget: required utils are missing');
+    }
 
     function getSizeScale() {
       if (mode !== 'export' || !sizeSelectEl || !sizeSelectEl.value) return 1;
@@ -247,108 +257,7 @@
     function downloadCurrentSvg() {
       if (!currentSvgString) return;
       const name = (hz || 'hanzi').trim() || 'hanzi';
-      const a = document.createElement('a');
-      const blob = new Blob([currentSvgString], { type: 'image/svg+xml;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      a.href = url;
-      a.download = `${name}.svg`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-    }
-
-    function downloadBlob(blob, filename) {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-    }
-
-    /**
-     * HanziWriter 动画笔画用「粗线 + clip-path」实现：clip-path 形如 url("http://当前页#mask-xxx")。
-     * 序列化成 Blob 再作为 <img> 绘制到 canvas 时，这种绝对地址无法解析，裁剪失效，就会只剩圆头粗线（与演示不一致）。
-     * 改为 url(#mask-xxx) 后，引用落在同一份 SVG 内，栅格化才能与页面一致。
-     */
-    function normalizeSvgClipUrlsForBlobRasterize(svgText) {
-      if (!svgText) return svgText;
-      // 先做一次宽松字符串归一，覆盖最常见形式
-      const coarse = svgText
-        .replace(/url\(\s*"[^#"]*#([^"#)]+)"\s*\)/gi, 'url(#$1)')
-        .replace(/url\(\s*'[^#']*#([^'#)]+)'\s*\)/gi, 'url(#$1)')
-        .replace(/url\(\s*&quot;[^#&]*#([^&]+)&quot;\s*\)/gi, 'url(#$1)')
-        .replace(/url\(\s*&apos;[^#&]*#([^&]+)&apos;\s*\)/gi, 'url(#$1)')
-        .replace(/url\(\s*[^#\s)]+#([^)\s]+)\s*\)/gi, 'url(#$1)');
-
-      // 再做 DOM 级修复：比纯正则更稳，避免漏掉 style/属性里的变体写法
-      try {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(coarse, 'image/svg+xml');
-        const idFromUrl = (raw) => {
-          if (!raw) return null;
-          const m = raw.match(/#([^)\"']+)/);
-          return m ? m[1] : null;
-        };
-
-        const nodes = doc.querySelectorAll('*');
-        nodes.forEach((el) => {
-          const clipPath = el.getAttribute('clip-path');
-          if (clipPath) {
-            const id = idFromUrl(clipPath);
-            if (id) el.setAttribute('clip-path', `url(#${id})`);
-          }
-
-          const style = el.getAttribute('style');
-          if (style && /clip-path\s*:/i.test(style)) {
-            const nextStyle = style.replace(
-              /clip-path\s*:\s*url\(([^)]+)\)/gi,
-              (_all, urlPart) => {
-                const id = idFromUrl(urlPart);
-                return id ? `clip-path:url(#${id})` : _all;
-              }
-            );
-            el.setAttribute('style', nextStyle);
-          }
-        });
-
-        return new XMLSerializer().serializeToString(doc.documentElement);
-      } catch (_) {
-        return coarse;
-      }
-    }
-
-    async function renderSvgToCanvas(svgString, width, height) {
-      const safeSvg = normalizeSvgClipUrlsForBlobRasterize(svgString);
-      const svgBlob = new Blob([safeSvg], { type: 'image/svg+xml;charset=utf-8' });
-      const svgUrl = URL.createObjectURL(svgBlob);
-
-      const img = new Image();
-      img.decoding = 'async';
-      img.src = svgUrl;
-
-      await new Promise((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = (e) => reject(e);
-      });
-
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.max(1, Math.round(width));
-      canvas.height = Math.max(1, Math.round(height));
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-      URL.revokeObjectURL(svgUrl);
-      return canvas;
-    }
-
-    async function canvasToPngBlob(canvas) {
-      return await new Promise((resolve) => {
-        canvas.toBlob((b) => resolve(b), 'image/png');
-      });
+      downloadUtils.downloadTextAsFile(currentSvgString, `${name}.svg`, 'image/svg+xml;charset=utf-8');
     }
 
     function sleep(ms) {
@@ -362,8 +271,8 @@
     }
 
     async function ensureGifJsOptimizedLoaded() {
-      const workerUrl = resolveGifAssetUrl('gif.worker.js');
-      const gifJsUrl = resolveGifAssetUrl('gif.js');
+      const workerUrl = resolveGifAssetUrl('vendors/gif.worker.js');
+      const gifJsUrl = resolveGifAssetUrl('vendors/gif.js');
       if (window.GIF) return workerUrl;
       if (gifJsLoadingPromise) return gifJsLoadingPromise;
 
@@ -415,7 +324,7 @@
             strokesLimit: step
           });
 
-          const stepCanvas = await renderSvgToCanvas(svgString, pixelSize, pixelSize);
+          const stepCanvas = await rasterizeUtils.renderSvgToCanvas(svgString, pixelSize, pixelSize);
 
           const idx = step - 1;
           const x = (idx % stepsCols) * (pixelSize + gap);
@@ -423,18 +332,18 @@
           outCtx.drawImage(stepCanvas, x, y);
         }
 
-        const pngBlob = await canvasToPngBlob(outCanvas);
+        const pngBlob = await rasterizeUtils.canvasToPngBlob(outCanvas);
         if (!pngBlob) throw new Error('PNG export failed: empty blob');
 
         const filename = `${filenamePrefix}-steps.png`;
-        downloadBlob(pngBlob, filename);
+        downloadUtils.downloadBlob(pngBlob, filename);
       } catch (e) {
         console.error(e);
         window.alert('导出逐笔图片失败：' + (e && e.message ? e.message : String(e)));
       }
     }
 
-    function buildGifCaptureIframeSrcdoc(pixelSize, showOutline) {
+    function buildGifCaptureIframeSrcdoc(pixelSize, runtimeScriptUrl, rasterizeUtilsUrl) {
       return `
 <!DOCTYPE html>
 <html>
@@ -445,147 +354,11 @@
       #target { width: ${pixelSize}px; height: ${pixelSize}px; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/hanzi-writer@3.5/dist/hanzi-writer.min.js"></script>
+    <script src="${rasterizeUtilsUrl}"></script>
+    <script src="${runtimeScriptUrl}"></script>
   </head>
   <body>
     <div id="target"></div>
-    <script>
-      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-      function normalizeSvgClipUrls(svgText) {
-        if (!svgText) return svgText;
-        const coarse = svgText
-          .replace(/url\\(\\s*\"[^#\"]*#([^\"#)]+)\"\\s*\\)/gi, 'url(#$1)')
-          .replace(/url\\(\\s*'[^#']*#([^'#)]+)'\\s*\\)/gi, 'url(#$1)')
-          .replace(/url\\(\\s*&quot;[^#&]*#([^&]+)&quot;\\s*\\)/gi, 'url(#$1)')
-          .replace(/url\\(\\s*&apos;[^#&]*#([^&]+)&apos;\\s*\\)/gi, 'url(#$1)')
-          .replace(/url\\(\\s*[^#\\s)]+#([^\\)\\s]+)\\s*\\)/gi, 'url(#$1)');
-
-        try {
-          const parser = new DOMParser();
-          const doc = parser.parseFromString(coarse, 'image/svg+xml');
-          const idFromUrl = (raw) => {
-            if (!raw) return null;
-            const m = raw.match(/#([^)\"']+)/);
-            return m ? m[1] : null;
-          };
-
-          const nodes = doc.querySelectorAll('*');
-          nodes.forEach((el) => {
-            const clipPath = el.getAttribute('clip-path');
-            if (clipPath) {
-              const id = idFromUrl(clipPath);
-              if (id) el.setAttribute('clip-path', 'url(#' + id + ')');
-            }
-
-            const style = el.getAttribute('style');
-            if (style && /clip-path\\s*:/i.test(style)) {
-              const nextStyle = style.replace(
-                /clip-path\\s*:\\s*url\\(([^)]+)\\)/gi,
-                (_all, urlPart) => {
-                  const id = idFromUrl(urlPart);
-                  return id ? ('clip-path:url(#' + id + ')') : _all;
-                }
-              );
-              el.setAttribute('style', nextStyle);
-            }
-          });
-
-          return new XMLSerializer().serializeToString(doc.documentElement);
-        } catch (_) {
-          return coarse;
-        }
-      }
-
-      async function renderSvgToCanvasInIframe(svgString, width, height) {
-        const safeSvg = normalizeSvgClipUrls(svgString);
-        const svgBlob = new Blob([safeSvg], { type: 'image/svg+xml;charset=utf-8' });
-        const svgUrl = URL.createObjectURL(svgBlob);
-        const img = new Image();
-        img.decoding = 'async';
-        img.src = svgUrl;
-        await new Promise((resolve, reject) => {
-          img.onload = () => resolve();
-          img.onerror = (e) => reject(e);
-        });
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(width));
-        canvas.height = Math.max(1, Math.round(height));
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        URL.revokeObjectURL(svgUrl);
-        return canvas;
-      }
-
-      function canvasToPngBlob(canvas) {
-        return new Promise((resolve) => {
-          canvas.toBlob((b) => {
-            if (b) return resolve(b);
-            const dataUrl = canvas.toDataURL('image/png');
-            fetch(dataUrl).then(r => r.blob()).then(resolve);
-          }, 'image/png');
-        });
-      }
-
-      window.addEventListener('message', async (ev) => {
-        const msg = ev.data || {};
-        if (msg.type !== 'start') return;
-        const runId = msg.runId;
-        if (!runId) return;
-
-        const { hz, pixelSize, strokeColor, outlineColor, highlightColor, drawingColor, frameDelayMs, finalDelayMs } = msg;
-        const targetEl = document.getElementById('target');
-
-        targetEl.innerHTML = '';
-        const writer = HanziWriter.create('target', hz, {
-          width: pixelSize,
-          height: pixelSize,
-          padding: Math.round(pixelSize * 0.14),
-          showCharacter: false,
-          showOutline: ${showOutline ? 'true' : 'false'},
-          strokeColor,
-          outlineColor,
-          highlightColor,
-          drawingColor,
-          charDataLoader: (char, onComplete) => {
-            fetch('https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0/' + char + '.json')
-              .then(res => { if (!res.ok) throw new Error('load failed'); return res.json(); })
-              .then(onComplete);
-          }
-        });
-
-        const captureFrame = async (index, isFinal) => {
-          const svgEl = targetEl.querySelector('svg');
-          let canvas = null;
-          if (!svgEl) {
-            canvas = document.createElement('canvas');
-            canvas.width = pixelSize;
-            canvas.height = pixelSize;
-          } else {
-            const svgText = new XMLSerializer().serializeToString(svgEl);
-            canvas = await renderSvgToCanvasInIframe(svgText, pixelSize, pixelSize);
-          }
-          const pngBlob = await canvasToPngBlob(canvas);
-          if (!pngBlob) return;
-          parent.postMessage({ type: 'frame', runId, index, isFinal, pngBlob }, '*');
-        };
-
-        await sleep(80);
-        let idx = 0;
-
-        const interval = setInterval(() => {
-          captureFrame(idx++, false);
-        }, frameDelayMs);
-
-        writer.animateCharacter({
-          onComplete: async () => {
-            clearInterval(interval);
-            await sleep(finalDelayMs > 0 ? 20 : 0);
-            await captureFrame(idx, true);
-            parent.postMessage({ type: 'done', runId, lastIndex: idx }, '*');
-          }
-        });
-      });
-    </script>
   </body>
 </html>
       `.trim();
@@ -653,6 +426,8 @@
         const pixelSize = CELL_IMG_W * sizeScale;
         const filename = `${currentSingleChar}${filenameSuffix}.gif`;
         const workerUrl = await ensureGifJsOptimizedLoaded();
+        const runtimeScriptUrl = resolveGifAssetUrl('runtime/gif-capture-runtime.js');
+        const rasterizeUtilsUrl = resolveGifAssetUrl('utils/svg-rasterize.js');
 
         const gif = new window.GIF({
           workers: 2,
@@ -674,7 +449,7 @@
         iframe.style.width = '1px';
         iframe.style.height = '1px';
         iframe.style.border = '0';
-        iframe.srcdoc = buildGifCaptureIframeSrcdoc(pixelSize, showOutline);
+        iframe.srcdoc = buildGifCaptureIframeSrcdoc(pixelSize, runtimeScriptUrl, rasterizeUtilsUrl);
         document.body.appendChild(iframe);
 
         await new Promise((resolve, reject) => {
@@ -752,7 +527,8 @@
             highlightColor: colors.highlightColor,
             drawingColor: colors.drawingColor,
             frameDelayMs,
-            finalDelayMs
+            finalDelayMs,
+            showOutline
           },
           '*'
         );
@@ -777,7 +553,7 @@
           gif.render();
         });
 
-        downloadBlob(gifBlob, filename);
+        downloadUtils.downloadBlob(gifBlob, filename);
       } catch (e) {
         console.error(e);
         window.alert(`${errorTitle}：` + (e && e.message ? e.message : String(e)));

@@ -9,17 +9,6 @@ body {
   overflow-y: auto;
 }
 
-/* display/practice：挂载容器需要成为 flex，并“吃满高度”，
-   才能让 `.multi-wrap { margin-top:auto; margin-bottom:auto; }` 真正实现垂直居中。 */
-#display-mount {
-  flex: 1 1 auto;
-  width: 100%;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
 .multi-wrap {
   width: 100%;
   display: flex;
