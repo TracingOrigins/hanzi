@@ -26,9 +26,9 @@
   - `hz`
 - **`practice.html`**：练习（quiz，逐字进入）
   - `hz`
-- **`preview.html`**：预览（内联 SVG；可导出逐笔 GIF 等）
+- **`preview.html`**：预览（内联 SVG）
   - `hz`
-- **`export.html`**：导出（合并 SVG/图片预览、「导出为图片」等，与预览共用组件逻辑）
+- **`export.html`**：导出（SVG/图片预览、「导出为图片」等）
   - `hz`
 
 ## 快速开始
