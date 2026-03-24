@@ -1,4 +1,4 @@
-/* 可挂载的预览/导出组件（替代 iframe/整页嵌入） */
+/* 预览 / 导出：可挂载组件 */
 (function () {
   const root = (window.HanziWidgets = window.HanziWidgets || {});
   const api = (root.preview = root.preview || {});
@@ -19,6 +19,9 @@
   const CELL_IMG_W = 160;
   const CELL_IMG_H = 160;
   const CELL_GAP_PX = 8;
+  // 预览格边长（与导出默认一致）
+  const PREVIEW_DISPLAY_CELL_SINGLE = 256;
+  const PREVIEW_DISPLAY_CELL_MULTI = 128;
   const GIF_FRAME_DELAY_MS = 80;
   const GIF_FINAL_DELAY_MS = 500;
   const IFRAME_LOAD_TIMEOUT_MS = 10000;
@@ -26,14 +29,13 @@
   const GIF_DONE_SETTLE_MS = 800;
   const GIF_RENDER_TIMEOUT_MS = 60000;
 
-  // 与 DOM 渲染保持一致的“padding->缩放/平移”映射：
-  // DOM 里 HanziWriter 使用 padding = Math.round(size * 0.14)，且 size=160。
+  // 与 DOM 一致：HanziWriter padding = round(size * 0.14)，size 取 160
   const DOM_SIZE_PX = CELL_IMG_W;
   const DOM_PADDING_PX = Math.round(DOM_SIZE_PX * 0.14);
   const padViewBox = (DOM_PADDING_PX / DOM_SIZE_PX) * CELL_VIEWBOX;
   const domScale = (DOM_SIZE_PX - 2 * DOM_PADDING_PX) / DOM_SIZE_PX;
 
-  // 缓存字符笔画数据，避免生成“逐笔多帧”时重复拉取同一个字的数据。
+  // 笔画数据缓存，避免逐笔多帧重复请求
   const charDataCache = new Map();
   async function loadCharacterDataCached(ch) {
     if (!ch) throw new Error('loadCharacterDataCached: char is required');
@@ -132,31 +134,38 @@
 
     const sizeLabelEl = document.createElement('span');
     sizeLabelEl.style.marginLeft = '0px';
-    sizeLabelEl.style.fontSize = '12px';
     sizeLabelEl.style.opacity = '0.8';
-    sizeLabelEl.textContent = '尺寸：';
+    sizeLabelEl.textContent = '单格边长：';
     sizeGroupEl.appendChild(sizeLabelEl);
 
     const sizeSelectEl = document.createElement('select');
     sizeSelectEl.id = 'sizeSelect';
-    sizeSelectEl.style.fontSize = '12px';
     sizeSelectEl.style.padding = '2px 6px';
     sizeSelectEl.style.borderRadius = '6px';
     sizeSelectEl.style.border = '1px solid var(--input-border)';
     sizeSelectEl.style.background = 'var(--input-bg)';
     sizeSelectEl.style.color = 'var(--button-text-color)';
+    // 下拉值：导出单格边长（px），相对 CELL_IMG_W 算缩放
     [
-      { value: '512', label: '512px' },
-      { value: '1024', label: '1024px', selected: true },
-      { value: '2048', label: '2048px' }
+      { value: '16', label: '16px' },
+      { value: '32', label: '32px' },
+      { value: '48', label: '48px' },
+      { value: '64', label: '64px' },
+      { value: '128', label: '128px' },
+      { value: '256', label: '256px' },
+      { value: '512', label: '512px' }
     ].forEach((opt) => {
       const o = document.createElement('option');
       o.value = opt.value;
       o.textContent = opt.label;
       o.style.color = 'var(--button-text-color)';
-      if (opt.selected) o.selected = true;
       sizeSelectEl.appendChild(o);
     });
+    {
+      const ic = normalizeText(hz);
+      sizeSelectEl.value =
+        ic.length === 1 ? String(PREVIEW_DISPLAY_CELL_SINGLE) : String(PREVIEW_DISPLAY_CELL_MULTI);
+    }
     sizeGroupEl.appendChild(sizeSelectEl);
     optionsRowEl.appendChild(sizeGroupEl);
 
@@ -165,14 +174,12 @@
 
     const colorLabel = document.createElement('span');
     colorLabel.style.marginLeft = '0px';
-    colorLabel.style.fontSize = '12px';
     colorLabel.style.opacity = '0.8';
     colorLabel.textContent = '颜色：';
     colorGroupEl.appendChild(colorLabel);
 
     const colorSelectEl = document.createElement('select');
     colorSelectEl.id = 'colorSelect';
-    colorSelectEl.style.fontSize = '12px';
     colorSelectEl.style.padding = '2px 6px';
     colorSelectEl.style.borderRadius = '6px';
     colorSelectEl.style.border = '1px solid var(--input-border)';
@@ -195,7 +202,6 @@
     colorGroupEl.appendChild(colorSelectEl);
     optionsRowEl.appendChild(colorGroupEl);
 
-    // 操作按钮：导出为图片 + 导出逐笔图片/GIF（仅单字显示）
     const exportActionsEl = document.createElement('div');
     exportActionsEl.className = 'export-actions';
 
@@ -210,21 +216,21 @@
     btnDownloadStepsEl.id = 'btnDownloadSteps';
     btnDownloadStepsEl.type = 'button';
     btnDownloadStepsEl.textContent = '导出逐笔图片';
-    btnDownloadStepsEl.hidden = true; // renderAll 后根据字符数量决定是否显示
+    btnDownloadStepsEl.hidden = true;
 
     const btnDownloadGifEl = document.createElement('button');
     btnDownloadGifEl.className = 'practice-button';
     btnDownloadGifEl.id = 'btnDownloadGif';
     btnDownloadGifEl.type = 'button';
     btnDownloadGifEl.textContent = '导出逐笔GIF';
-    btnDownloadGifEl.hidden = true; // renderAll 后根据字符数量决定是否显示
+    btnDownloadGifEl.hidden = true;
 
     const btnDownloadGifTransparentEl = document.createElement('button');
     btnDownloadGifTransparentEl.className = 'practice-button';
     btnDownloadGifTransparentEl.id = 'btnDownloadGifTransparent';
     btnDownloadGifTransparentEl.type = 'button';
     btnDownloadGifTransparentEl.textContent = '导出透明逐笔GIF';
-    btnDownloadGifTransparentEl.hidden = true; // renderAll 后根据字符数量决定是否显示
+    btnDownloadGifTransparentEl.hidden = true;
 
     exportActionsEl.appendChild(btnDownloadEl);
     exportActionsEl.appendChild(btnDownloadStepsEl);
@@ -235,6 +241,8 @@
     let currentObjectUrl = null;
     let currentSvgString = '';
     let currentSingleChar = null;
+    // 导出：单字/多字切换时恢复默认边长（256 / 128）
+    let prevExportIsSingle = undefined;
     const downloadUtils = window.HanziUtils && window.HanziUtils.download;
     const rasterizeUtils = window.HanziUtils && window.HanziUtils.svgRasterize;
 
@@ -244,9 +252,9 @@
 
     function getSizeScale() {
       if (mode !== 'export' || !sizeSelectEl || !sizeSelectEl.value) return 1;
-      const v = Number(sizeSelectEl.value);
-      if (Number.isNaN(v) || v <= 0) return 1;
-      return v / 1024;
+      const px = Number(sizeSelectEl.value);
+      if (Number.isNaN(px) || px <= 0) return 1;
+      return px / CELL_IMG_W;
     }
 
     function getStrokeColorForExport() {
@@ -267,7 +275,7 @@
     }
 
     let gifJsLoadingPromise = null;
-    /** 与当前页面同源，避免 Worker 无法加载跨域 worker 脚本（如 localhost vs cdn） */
+    // 同源 URL，避免 Worker 跨域（如 localhost 与 CDN 混用）
     function resolveGifAssetUrl(filename) {
       return new URL(`./assets/${filename}`, window.location.href).href;
     }
@@ -306,7 +314,6 @@
         const pixelSize = CELL_IMG_W * sizeScale;
         const filenamePrefix = currentSingleChar;
 
-        // 把逐笔过程拼成“一张图”导出，避免下载 N 张 PNG
         const gap = Math.max(0, Math.round(pixelSize * 0.04));
         const stepsCols = Math.min(total, 7);
         const stepsRows = Math.ceil(total / stepsCols);
@@ -317,7 +324,6 @@
         const outCtx = outCanvas.getContext('2d');
         if (!outCtx) throw new Error('PNG export failed: no canvas context');
 
-        // 逐笔叠加：第 1 笔、第 2 笔...直到全部笔画
         for (let step = 1; step <= total; step++) {
           const svgString = await generateCombinedSvg(chars, {
             includeCellBorders: false,
@@ -632,7 +638,9 @@
 
       const chars = normalizeText(hz);
       if (chars.length === 0) {
-        svgContainerEl.innerHTML = '<p style="color:var(--fg-subtle)">请输入至少 1 个字符（建议汉字）。</p>';
+        if (mode === 'export') prevExportIsSingle = undefined;
+        svgContainerEl.innerHTML =
+          '<p class="preview-inline-msg preview-inline-msg--muted">请输入至少 1 个字符（建议汉字）。</p>';
         return;
       }
 
@@ -641,9 +649,22 @@
       btnDownloadStepsEl.hidden = !currentSingleChar;
       btnDownloadGifTransparentEl.hidden = !currentSingleChar;
 
+      if (mode === 'export') {
+        const isSingle = chars.length === 1;
+        if (prevExportIsSingle === undefined || prevExportIsSingle !== isSingle) {
+          sizeSelectEl.value = isSingle
+            ? String(PREVIEW_DISPLAY_CELL_SINGLE)
+            : String(PREVIEW_DISPLAY_CELL_MULTI);
+        }
+        prevExportIsSingle = isSingle;
+      }
+
       const cols = Math.min(DEFAULT_COLS, chars.length);
       const rows = Math.ceil(chars.length / cols);
-      const sizeScale = getSizeScale();
+      const sizeScale =
+        mode === 'export'
+          ? getSizeScale()
+          : (chars.length === 1 ? PREVIEW_DISPLAY_CELL_SINGLE : PREVIEW_DISPLAY_CELL_MULTI) / CELL_IMG_W;
 
       const baseWidth = cols * CELL_IMG_W + (cols - 1) * CELL_GAP_PX;
       const baseHeight = rows * CELL_IMG_H + (rows - 1) * CELL_GAP_PX;
@@ -689,14 +710,14 @@
           }
           svgContainerEl.appendChild(overlay);
         } else {
-          const svgString = await generateCombinedSvg(chars, { includeCellBorders: true });
+          const svgString = await generateCombinedSvg(chars, { includeCellBorders: true, sizeScale });
           currentSvgString = svgString;
           svgContainerEl.style.border = 'none';
           svgContainerEl.style.borderRadius = '0';
           svgContainerEl.innerHTML = svgString;
         }
       } catch (e) {
-        svgContainerEl.innerHTML = '<p style="color:red">图片生成失败</p>';
+        svgContainerEl.innerHTML = '<p class="preview-inline-msg preview-inline-msg--danger">图片生成失败</p>';
         console.error(e);
       }
     }

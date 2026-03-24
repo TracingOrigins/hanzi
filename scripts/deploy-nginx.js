@@ -29,7 +29,7 @@ async function emptyDir(dir) {
 }
 
 async function copyDir(src, dest) {
-  // Node 16+ supports fs.cp; Node 20+ is common with npm 10
+  // Node 16+ 起提供 fs.cp；当前环境多为 Node 20+
   await fs.cp(src, dest, { recursive: true, force: true });
 }
 

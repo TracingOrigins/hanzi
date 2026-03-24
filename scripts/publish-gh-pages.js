@@ -116,7 +116,7 @@ function main() {
     try {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     } catch {
-      // ignore
+      // 忽略删除临时目录失败
     }
   }
 }
