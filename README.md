@@ -1,126 +1,124 @@
 ## 项目简介
 
-本项目是一个**依托于 [HanziWriter](https://github.com/chanind/hanzi-writer) 与 [hanzi-writer-data](https://github.com/chanind/hanzi-writer-data)** 的轻量级静态应用网站，用于展示汉字笔顺动画、提供书写练习，并支持把汉字笔画导出为 SVG/图片以辅助汉字教学与课件制作。
+本项目是一个**依托于 [HanziWriter](https://github.com/chanind/hanzi-writer) 与 [hanzi-writer-data](https://github.com/chanind/hanzi-writer-data)** 的轻量级静态站点，用于展示汉字笔顺动画、书写练习，以及将笔画导出为 SVG、栅格图片与逐笔 GIF，便于汉字教学与课件制作。
 
-项目使用简单的构建脚本把页面模板生成到 `dist/` 下，生成后的静态文件即可直接打开或部署到任意静态托管（例如 GitHub Pages）。
+使用 Node 构建脚本将模板与资源输出到 `dist/`，生成物可直接本地打开或部署到任意静态托管（例如 GitHub Pages）。
+
+## 仓库结构（简要）
+
+| 路径 | 说明 |
+|------|------|
+| `src/pages/` | 页面片段、`pages.json` 页面清单 |
+| `src/assets/` | 样式、脚本、第三方资源（如 `gif.js`） |
+| `src/templates/base.html` | HTML 壳模板 |
+| `scripts/build.js` | 生成 `dist/` |
+| `scripts/deploy-nginx.js` | 可选：将 `dist/` 同步到本机 Nginx 目录 |
+| `scripts/publish-gh-pages.js` | CI：将 `dist/` 发布到 `gh-pages` 分支 |
 
 ## 已有页面与功能
-当前站点由 `src/pages/pages.json` 统一管理页面清单，构建后生成到 `dist/`。主要页面如下：
 
-- **`index.html`**：首页（演示 / 练习 / 预览 / 导出切换）
-  - `hz`：要渲染的字符串（会按字符逐个渲染成网格）
+页面由 `src/pages/pages.json` 统一管理，构建后写入 `dist/`。主要入口如下：
+
+- **`index.html`**：首页（演示 / 练习 / 预览 / 导出切换，内嵌对应功能）
+  - `hz`：要渲染的字符串（按字符逐个网格展示）
   - `tab`：可选 `display | practice | preview | export`（默认 `display`）
-- **`display.html`**：演示（多字网格展示与点击重播）
+- **`display.html`**：演示（多字网格、点击重播）
   - `hz`
 - **`practice.html`**：练习（quiz，逐字进入）
   - `hz`
-- **`svg.html`**：预览（内联 SVG 展示）
+- **`preview.html`**：预览（内联 SVG；可导出逐笔 GIF 等）
   - `hz`
-- **`export.html`**：导出（合并生成可下载的 SVG/图片预览，并提供“导出为图片”按钮）
+- **`export.html`**：导出（合并 SVG/图片预览、「导出为图片」等，与预览共用组件逻辑）
   - `hz`
 
 ## 快速开始
 
-### 方式一：构建后直接打开（最简单）
+### 仅构建 `dist/`（不部署）
 
-先执行构建生成 `dist/`，然后用浏览器打开页面，例如：
+```bash
+node scripts/build.js
+```
+
+### 构建后直接打开本地文件
+
+在浏览器中打开，例如：
 
 - `dist/index.html?hz=永`
 - `dist/practice.html?hz=学`
 - `dist/export.html?hz=爱`
 - `dist/display.html?hz=你好世界`
+- `dist/preview.html?hz=汉`
 
-### 方式二：本地起一个静态服务器（推荐）
-
-用任意静态服务器都可以。举例（任选其一）：
+### 本地静态服务器（推荐）
 
 ```bash
-# Python 3
 python -m http.server 8080
 ```
 
-然后访问（示例）：
+然后访问：
 
 - `http://localhost:8080/dist/index.html?hz=汉`
 
-### 方式三：作为 Node 项目使用（用于“一键同步到 Nginx”）
+### 作为 Node 项目：构建并同步到 Nginx
 
-本项目也可以作为 Node 项目管理：静态文件放在 `dist/` 下，通过脚本把 `dist/` 一键同步到你配置的 Nginx `html` 目录（会先清空目标目录，再复制文件）。
+`npm run build` 会依次执行：`node scripts/build.js`，再执行 `node scripts/deploy-nginx.js`。
 
-1) 安装依赖：
+- **若仓库根目录没有 `.env` 文件**：部署脚本会静默跳过（适合 GitHub Actions 等只需 `dist/` 的场景）。
+- **若存在 `.env`**：需配置 `NGINX_HTML_PATH`，脚本会清空该目录后将 `dist/` 内容复制进去。
+
+1. 安装依赖：
 
 ```bash
 npm install
 ```
 
-2) 新建 `.env`（可参考 `.env.example`）：
+2. 新建 `.env`（可参考 `.env.example`）：
 
 ```bash
-# 你的 nginx html 目录
+# 必填：Nginx 的 html 根目录（与 deploy 脚本配合使用）
 NGINX_HTML_PATH=C:\nginx\html
+# 可选：部署完成后在终端打印访问链接（末尾不要多余斜杠）
+SITE_BASE_URL=http://localhost:80
 ```
-3) 执行同步（会先清空目标目录，再复制 `dist/`）：
+
+3. 执行：
 
 ```bash
 npm run build
 ```
 
-> 说明：你的 `build` 脚本会先生成 `dist/`，再执行 `scripts/deploy-nginx.js`（同步到 Nginx）。
+未设置 `SITE_BASE_URL` 时，部署成功后仍会提示可在 `.env` 中配置以便打印访问链接。
 
-## 部署到 GitHub Pages（gh-pages 分支）
+## 部署到 GitHub Pages（`gh-pages` 分支）
 
-本项目已内置 GitHub Actions 工作流：`.github/workflows/publish-gh-pages.yml`。
+工作流：`.github/workflows/publish-gh-pages.yml`。
 
-1. 仓库 `Settings -> Pages`：
-   - Source 选择 **`gh-pages` / `root`**
-2. 触发发布：
-   - 该工作流默认只在向 `main` 或 `master` 推送时触发
-   - 你可以在 `main` 上做一次很小的提交（改 README 或任意文件）来触发构建
-3. 工作流执行成功后，`dist/` 会被发布到 `gh-pages` 分支，Pages 将自动生效
+1. 仓库 **Settings → Pages**：Source 选择 **`gh-pages` / `root`**。
+2. 向 `main` 或 `master` 推送会触发：安装依赖 → `npm run build`（无 `.env` 时仅生成 `dist/`）→ `node scripts/publish-gh-pages.js` 将 `dist/` 推送到 `gh-pages` 分支。
+3. 若 `dist/` 相对上次无变化，会跳过无意义提交。
 
 ## URL 参数
 
-- **`hz`**：要展示/练习/预览/导出的字符串（会按字符逐个渲染到网格里；建议传入常见汉字）
+- **`hz`**：要展示/练习/预览/导出的字符串（按字符逐个渲染；建议使用数据源中存在的汉字）。
 
-> 说明：若字符串中包含数据源无法加载的字符，可能会出现渲染失败；这取决于 `hanzi-writer-data` 是否提供对应字形数据。
+若某字符在 `hanzi-writer-data` 中无对应 JSON，可能无法渲染。
 
-## 技术说明（基于现有代码推断）
+## 技术说明
 
-- **渲染引擎**：`hanzi-writer@3.5`（通过 `jsdelivr` CDN 引入）
-- **字形/笔画数据**：`hanzi-writer-data@2.0`（按字逐个 JSON 加载）
-- **主题适配策略**：
-  - CSS 使用 `prefers-color-scheme`
-  - JS 在初始化时读取 CSS 变量（避免在 JS 中硬编码色值）
-  - 监听主题变化并重新初始化/重渲染
-- **SVG 生成策略**：
-  - 读取 `data.strokes`（SVG path 数据）
-  - 通过 `g transform` 做坐标系修正（翻转 Y 轴、缩放/平移居中）
-- 在导出页面中使用 Blob 将 SVG 生成为可下载/可保存的图片资源
+- **渲染**：`hanzi-writer@3.5`（通过 jsDelivr CDN）
+- **字形数据**：`hanzi-writer-data@2.0`（按字请求 JSON）
+- **主题**：CSS 使用 `prefers-color-scheme`；脚本读取 CSS 变量并在主题变化时重渲染
+- **SVG**：基于 `data.strokes` 与 `g transform` 做坐标系修正（Y 轴翻转、缩放居中）
+- **导出**：Blob 下载 SVG/图片；预览与导出页使用 `gif.js` 生成逐笔 GIF（含透明背景选项）
 
-## 未来功能推测（路线图建议）
+## 后续可演进方向（路线图）
 
-结合当前页面与代码结构，最自然的演进方向通常包括：
-
-- **汉字输入与导航**
-  - 增加输入框/词条列表，支持快速切换 `hz`
-  - 支持常用汉字表、教材分级（按年级/课本单元）
-
-- **教学场景功能**
-  - 逐笔播放、调速、循环、笔画序号显示/隐藏
-  - 错误提示策略与评分（quiz 结果统计、练习记录）
-  - 生成练习纸（田字格/米字格）与打印样式
-
-- **资源导出**
-  - 导出 SVG（不同风格：仅轮廓/仅实心/带笔画编号）
-  - 导出 PNG（前端将 SVG 渲染到 canvas 后下载）
-
-- **离线与性能**
-  - 缓存已加载的 `hanzi-writer-data` JSON（内存/`localStorage`）
-  - 支持离线包（将常用字数据内置或可选下载）
+- 输入框与词条/字表导航，快速切换 `hz`
+- 逐笔播放速度、循环、笔画序号显示/隐藏；练习统计与评分
+- 更多导出样式（轮廓/填充、带笔画编号等）
+- 缓存已加载的字形 JSON，或可选离线数据包
 
 ## 版权与许可
 
 - 本仓库许可证：MIT，见 `LICENSE`
-- 第三方项目与数据：
-  - `hanzi-writer` 与 `hanzi-writer-data` 版权与许可请参见其上游仓库说明
-
+- `hanzi-writer` 与 `hanzi-writer-data` 的许可请见各自上游仓库
