@@ -1,29 +1,23 @@
 /* Unified styles for both inline-svg and export-svg pages */
 
-/* 约束在 `.svg-page` 下，避免影响首页布局 */
-.svg-page,
-#preview-mount {
-  /* 给预览/导出页的挂载区域与页面容器提供“高度基准”，
-     这样才能在视口内实现真正的上下居中。 */
-  height: 100%;
-}
-
-#preview-mount {
-  width: 100%;
-  display: flex;
-}
-
 .svg-page {
+  /* 预览/导出独立页和首页挂载都共用该布局 */
+  height: 100%;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   overflow: auto;
   width: 100%;
 }
 
-/* export: 需要提示文字，所以纵向布局 */
-.svg-page.is-export {
+/* 内容高度不足时居中；超出时 auto 外边距退化为 0，从顶部开始显示 */
+.svg-page .svg-content {
+  display: flex;
   flex-direction: column;
+  align-items: center;
+  margin-top: auto;
+  margin-bottom: auto;
 }
 
 .svg-page #svg-container {
